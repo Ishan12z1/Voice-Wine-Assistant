@@ -1,9 +1,8 @@
 """
 filters.py
 
-This file applies the structured filters from StructuredWineQuery to the wine
-dataset. It is responsible only for narrowing the dataset down to matching rows.
-
+This file applies the structured filters from StructuredWineQuery to the
+canonical enriched wine dataset produced in Step 2.
 """
 
 from __future__ import annotations
@@ -18,9 +17,6 @@ from backend.core.schemas import QueryFilters, StructuredWineQuery
 def _safe_contains(series: pd.Series, value: Optional[str]) -> pd.Series:
     """
     Perform a case-insensitive substring match.
-
-    We use substring matching because user requests may be broader than the exact
-    dataset text. For example, 'cabernet' should match 'Cabernet Sauvignon'.
     """
     if not value:
         return pd.Series(True, index=series.index)
@@ -68,58 +64,50 @@ def _apply_max_filter(df: pd.DataFrame, column: str, value: Optional[float]) -> 
 def apply_filters(df: pd.DataFrame, filters: QueryFilters) -> pd.DataFrame:
     """
     Apply all supported structured filters with AND logic.
-
-    Every active filter must match for a wine to remain in the result set.
     """
     result = df.copy()
 
-    # Text / categorical filters
-    result = _apply_text_filter(result, "Name", filters.name)
-    result = _apply_text_filter(result, "Producer", filters.producer)
-    result = _apply_text_filter(result, "Country", filters.country)
-    result = _apply_text_filter(result, "Region", filters.region)
-    result = _apply_text_filter(result, "Appellation", filters.appellation)
-    result = _apply_text_filter(result, "Varietal", filters.varietal)
+    # Canonical text fields from Step 2
+    result = _apply_text_filter(result, "name", filters.name)
+    result = _apply_text_filter(result, "producer", filters.producer)
+    result = _apply_text_filter(result, "country", filters.country)
+    result = _apply_text_filter(result, "region", filters.region)
+    result = _apply_text_filter(result, "appellation", filters.appellation)
+    result = _apply_text_filter(result, "varietal", filters.varietal)
 
-    # Color is stored as a lowercase text field in the dataset.
     if filters.color is not None:
-        result = _apply_text_filter(result, "color", str(filters.color))
+        result = _apply_text_filter(result, "color", filters.color.value)
 
-    # Numeric filters
-    result = _apply_min_filter(result, "Retail", filters.min_price)
-    result = _apply_max_filter(result, "Retail", filters.max_price)
+    # Canonical numeric fields from Step 2
+    result = _apply_min_filter(result, "price", filters.min_price)
+    result = _apply_max_filter(result, "price", filters.max_price)
 
-    result = _apply_min_filter(result, "Vintage", filters.min_vintage)
-    result = _apply_max_filter(result, "Vintage", filters.max_vintage)
+    result = _apply_min_filter(result, "vintage", filters.min_vintage)
+    result = _apply_max_filter(result, "vintage", filters.max_vintage)
 
-    result = _apply_min_filter(result, "ABV", filters.min_abv)
-    result = _apply_max_filter(result, "ABV", filters.max_abv)
+    result = _apply_min_filter(result, "abv", filters.min_abv)
+    result = _apply_max_filter(result, "abv", filters.max_abv)
 
     if filters.volume_ml is not None and "volume_ml" in result.columns:
         volume_col = pd.to_numeric(result["volume_ml"], errors="coerce")
         result = result[volume_col == filters.volume_ml]
 
-    # Quality filters from Step 2 derived columns
     result = _apply_min_filter(result, "best_score", filters.min_best_score)
     result = _apply_min_filter(result, "avg_score", filters.min_avg_score)
     result = _apply_min_filter(result, "rating_count", filters.min_rating_count)
 
-    # Optional data-quality-aware flags
-    if filters.require_varietal:
-        if "Varietal" in result.columns:
-            result = result[result["Varietal"].notna() & (result["Varietal"].astype(str).str.strip() != "")]
+    if filters.require_varietal and "varietal" in result.columns:
+        result = result[result["varietal"].notna() & (result["varietal"].astype(str).str.strip() != "")]
 
-    if filters.require_vintage:
-        if "Vintage" in result.columns:
-            vintage_col = pd.to_numeric(result["Vintage"], errors="coerce")
-            result = result[vintage_col.notna()]
+    if filters.require_vintage and "vintage" in result.columns:
+        vintage_col = pd.to_numeric(result["vintage"], errors="coerce")
+        result = result[vintage_col.notna()]
 
     return result.reset_index(drop=True)
 
 
 def retrieve_filtered_wines(df: pd.DataFrame, query: StructuredWineQuery) -> pd.DataFrame:
     """
-    Convenience wrapper that takes the full structured query and returns only the
-    rows that match its filters.
+    Filter the canonical enriched dataset using query.filters.
     """
     return apply_filters(df=df, filters=query.filters)
