@@ -245,3 +245,9 @@ exampleChips.forEach((chip) => {
     await submitQuestion(question);
   });
 });
+window.wineAssistantUI = {
+  submitQuestion,
+  setStatus,
+  clearStatus,
+  questionInput
+};

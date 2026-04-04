@@ -1,10 +1,14 @@
 /*
 styles.css
 
-This file styles the frontend.
-It controls layout, spacing, typography, buttons, status messages,
-and wine result cards.
+This file styles the Step 8 and Step 9 frontend.
+It controls layout, buttons, status messages, result cards,
+and the microphone button state for voice capture.
 
+Why this file exists:
+- It makes the browser UI readable and usable.
+- It visually distinguishes normal, loading, and listening states.
+- It keeps presentation separate from HTML and JavaScript.
 */
 
 :root {
@@ -81,7 +85,7 @@ body {
 
 .input-row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto;
   gap: 12px;
 }
 
@@ -101,7 +105,8 @@ body {
 }
 
 #ask-button,
-.example-chip {
+.example-chip,
+.icon-button {
   border: none;
   border-radius: 12px;
   cursor: pointer;
@@ -123,6 +128,34 @@ body {
 #ask-button:disabled {
   opacity: 0.65;
   cursor: not-allowed;
+}
+
+.icon-button {
+  width: 52px;
+  min-height: 50px;
+  background: #eee7e0;
+  font-size: 1.1rem;
+}
+
+.icon-button:hover {
+  background: #e5dbd1;
+}
+
+.icon-button.listening {
+  background: var(--accent);
+  color: #fff;
+}
+
+.icon-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.voice-support-hint {
+  min-height: 20px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 .example-row {
@@ -296,8 +329,10 @@ body {
     grid-template-columns: 1fr;
   }
 
-  #ask-button {
+  #ask-button,
+  .icon-button {
     min-height: 48px;
+    width: 100%;
   }
 
   .wine-card {
