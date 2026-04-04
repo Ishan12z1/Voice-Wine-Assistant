@@ -56,6 +56,7 @@ class QueryFilters(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         str_strip_whitespace=True,
+        use_enum_values=True,
     )
 
     # Text / categorical filters

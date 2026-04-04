@@ -175,7 +175,7 @@ def extract_rating_stats(blob: Any) -> pd.Series:
         source = item.get("source")
 
         try:
-            score = float(score)
+            score = float(score) if score is not None else 0.0
             max_score = float(max_score) if max_score else 100.0
             if max_score > 0:
                 normalized_scores.append(round((score / max_score) * 100, 2))
