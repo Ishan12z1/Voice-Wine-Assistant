@@ -480,11 +480,6 @@ def should_ask_for_clarification(
 ) -> tuple[bool, list[str], str | None]:
     """
     Decide whether the parser should ask the user for one more detail.
-
-    Returns:
-    - should_clarify
-    - missing_fields
-    - clarification_message
     """
     normalized_question = normalize_text(question)
     active_filters = filters.active()
@@ -499,6 +494,15 @@ def should_ask_for_clarification(
                 ["budget"],
                 "Please add a budget, for example under $25, under $50, or between $30 and $60.",
             )
+
+    # If the user explicitly wants grape / varietal-based guidance,
+    # ask for the varietal before asking for color.
+    if is_reco and mentions_varietal_focus(question) and not filters.varietal:
+        return (
+            True,
+            ["varietal"],
+            "Please name a varietal or grape, for example Chardonnay, Pinot Noir, or Cabernet Sauvignon.",
+        )
 
     # After budget, recommendation / gift flows should usually require a color
     # unless the user already gave a color or a varietal.
@@ -519,7 +523,6 @@ def should_ask_for_clarification(
                 "Please add one detail like budget, color, region, producer, appellation, or varietal.",
             )
 
-    # Very vague non-browse query with no filters and no sort intent.
     has_browse_signal = has_any_phrase(normalized_question, BROWSE_KEYWORDS)
     if not active_filters and occasion is None and detected_sort == SortBy.RELEVANCE and not has_browse_signal:
         return (
@@ -530,7 +533,14 @@ def should_ask_for_clarification(
 
     return False, [], None
 
-
+def mentions_varietal_focus(question: str) -> bool:
+    normalized_question = normalize_text(question)
+    return bool(
+        re.search(
+            r"\b(varietal|grape|grapes)\b",
+            normalized_question,
+        )
+    )
 
 def parse_query(text: str) -> StructuredWineQuery:
     """
@@ -603,6 +613,15 @@ def parse_query(text: str) -> StructuredWineQuery:
     # Dataset-backed entity matching
     filters, match_scores = apply_dataset_matches(cleaned, filters)
     confidence_parts.extend(match_scores)
+
+    # If the user explicitly asks for varietal / grape-focused results,
+    # require rows to actually have varietal data.
+    if mentions_varietal_focus(cleaned):
+        filters.require_varietal = True
+
+    # If the user already matched a specific varietal, also require varietal data.
+    if filters.varietal:
+        filters.require_varietal = True
 
     # Only allow loose price parsing when no other numeric field already matched.
     has_non_price_numeric = any([
