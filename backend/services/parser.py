@@ -71,17 +71,21 @@ def make_ambiguous_query(
     missing_fields: list[str],
     clarification_message: str,
     confidence: float = 0.4,
+    filters: QueryFilters | None = None,
+    sort_by: SortBy = SortBy.RELEVANCE,
+    occasion: Occasion | None = None,
 ) -> StructuredWineQuery:
     return StructuredWineQuery(
         original_question=question,
         intent=QueryIntent.AMBIGUOUS_REQUEST,
-        filters=QueryFilters(),
-        sort_by=SortBy.RELEVANCE,
+        filters=filters or QueryFilters(),
+        sort_by=sort_by,
         limit=10,
         confidence=confidence,
         needs_clarification=True,
         clarification_message=clarification_message,
         missing_fields=missing_fields,
+        occasion=occasion,
     )
 
 
@@ -459,30 +463,73 @@ def infer_intent(
 
     return QueryIntent.BROWSE_COLLECTION
 
+def is_recommendation_query(question: str) -> bool:
+    normalized_question = normalize_text(question)
+    return bool(
+        re.search(
+            r"\b(recommend|suggest|something nice|pick a wine|good bottle|gift)\b",
+            normalized_question,
+        )
+    )
 
 def should_ask_for_clarification(
     question: str,
     filters: QueryFilters,
     occasion: Occasion | None,
     detected_sort: SortBy,
-) -> bool:
+) -> tuple[bool, list[str], str | None]:
+    """
+    Decide whether the parser should ask the user for one more detail.
+
+    Returns:
+    - should_clarify
+    - missing_fields
+    - clarification_message
+    """
     normalized_question = normalize_text(question)
+    active_filters = filters.active()
 
-    # If we already have a real filter, an occasion, or a sort intent,
-    # the query is usable enough for v1.
-    if filters.active() or occasion is not None or detected_sort != SortBy.RELEVANCE:
-        return False
+    is_reco = is_recommendation_query(question) or occasion is not None
 
-    # Generic recommendation with no useful detail should ask for one constraint.
+    # Recommendation / gift flows should require a budget first.
+    if is_reco:
+        if filters.min_price is None and filters.max_price is None:
+            return (
+                True,
+                ["budget"],
+                "Please add a budget, for example under $25, under $50, or between $30 and $60.",
+            )
+
+    # After budget, recommendation / gift flows should usually require a color
+    # unless the user already gave a color or a varietal.
+    if is_reco:
+        if filters.color is None and not filters.varietal:
+            return (
+                True,
+                ["color"],
+                "Please choose a style like red, white, sparkling, or rosé.",
+            )
+
+    # Generic recommendation with no useful detail at all.
     if re.search(r"\b(recommend|suggest|something nice|pick a wine|good bottle)\b", normalized_question):
-        return True
+        if not active_filters:
+            return (
+                True,
+                ["budget_or_style"],
+                "Please add one detail like budget, color, region, producer, appellation, or varietal.",
+            )
 
-    # Very vague query with no filters and no sort intent should clarify.
+    # Very vague non-browse query with no filters and no sort intent.
     has_browse_signal = has_any_phrase(normalized_question, BROWSE_KEYWORDS)
-    if not has_browse_signal:
-        return True
+    if not active_filters and occasion is None and detected_sort == SortBy.RELEVANCE and not has_browse_signal:
+        return (
+            True,
+            ["budget_or_style"],
+            "Please add one detail like budget, color, region, producer, appellation, or varietal.",
+        )
 
-    return False
+    return False, [], None
+
 
 
 def parse_query(text: str) -> StructuredWineQuery:
@@ -502,6 +549,9 @@ def parse_query(text: str) -> StructuredWineQuery:
                 "Please ask about a wine, producer, region, appellation, "
                 "budget, rating, or another dataset field."
             ),
+            filters=QueryFilters(),
+            sort_by=SortBy.RELEVANCE,
+            occasion=None,
         )
 
     unsupported_reason = detect_unsupported_reason(cleaned)
@@ -579,16 +629,23 @@ def parse_query(text: str) -> StructuredWineQuery:
         confidence_parts.append(sort_conf)
 
     # Handle vague recommendation requests honestly.
-    if should_ask_for_clarification(cleaned, filters, occasion, detected_sort):
+    should_clarify, missing_fields, clarification_message = should_ask_for_clarification(
+        cleaned, filters, occasion, detected_sort
+    )
+
+    if should_clarify:
         return make_ambiguous_query(
             question=cleaned,
-            missing_fields=["budget_or_style"],
-            clarification_message=(
+            missing_fields=missing_fields,
+            clarification_message=clarification_message or (
                 "Please add one detail like budget, color, region, producer, "
                 "appellation, or varietal."
             ),
             confidence=0.45,
-        )
+            filters=filters,
+            sort_by=detected_sort,
+            occasion=occasion,
+    )
     # Detect sort intent like cheapest / most expensive / best rated.
 
     intent = infer_intent(cleaned, filters, occasion, detected_sort)
