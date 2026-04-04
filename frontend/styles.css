@@ -225,6 +225,44 @@ body {
   line-height: 1.6;
 }
 
+.followup-section {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.followup-title {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+.followup-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.followup-chip {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 9px 14px;
+  cursor: pointer;
+  font-size: 0.92rem;
+  line-height: 1;
+}
+
+.followup-chip:hover {
+  background: #eee7e0;
+}
+
+.followup-chip:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .speech-controls {
   display: flex;
   align-items: center;

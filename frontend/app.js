@@ -22,6 +22,10 @@ const statusSection = document.getElementById("status-section");
 const responseSection = document.getElementById("response-section");
 const summaryText = document.getElementById("summary-text");
 
+const followupSection = document.getElementById("followup-section");
+const followupTitle = document.getElementById("followup-title");
+const followupChips = document.getElementById("followup-chips");
+
 const metaRow = document.getElementById("meta-row");
 const responseTypeEl = document.getElementById("response-type");
 const matchCountEl = document.getElementById("match-count");
@@ -49,18 +53,28 @@ function clearStatus() {
 }
 
 /**
+ * Normalize extra whitespace.
+ */
+function normalizeQuestionText(text) {
+  return String(text || "").replace(/\s+/g, " ").trim();
+}
+
+/**
  * Hide all response content before a new request.
  */
 function resetResponseUI() {
   responseSection.classList.add("hidden");
   resultsSection.classList.add("hidden");
   metaRow.classList.add("hidden");
+  followupSection.classList.add("hidden");
 
   summaryText.textContent = "";
   responseTypeEl.textContent = "";
   matchCountEl.textContent = "";
   rankingBasisEl.textContent = "";
   resultsGrid.innerHTML = "";
+  followupTitle.textContent = "Try one of these next:";
+  followupChips.innerHTML = "";
 }
 
 /**
@@ -164,6 +178,219 @@ function createWineCard(wine) {
 }
 
 /**
+ * Return suggestion config based on response state.
+ */
+function getFollowupConfig(data) {
+  const responseType = data?.response_type || "";
+  const missingFields = data?.query?.missing_fields || [];
+
+  if (responseType === "too_many_matches") {
+    return {
+      title: "Narrow it down:",
+      suggestions: [
+        { label: "Under $30", value: "under $30", mode: "budget" },
+        { label: "Red wines", value: "red", mode: "color" },
+        { label: "From France", value: "from France", mode: "append" },
+        { label: "Cabernet Sauvignon", value: "Cabernet Sauvignon", mode: "varietal" }
+      ]
+    };
+  }
+
+  if (responseType === "clarification" && missingFields.includes("budget")) {
+    return {
+      title: "Add a budget:",
+      suggestions: [
+        { label: "Under $25", value: "under $25", mode: "budget" },
+        { label: "Under $50", value: "under $50", mode: "budget" },
+        { label: "Between $30 and $60", value: "between $30 and $60", mode: "budget" }
+      ]
+    };
+  }
+
+  if (responseType === "clarification" && missingFields.includes("color")) {
+    return {
+      title: "Choose a style:",
+      suggestions: [
+        { label: "Red", value: "red", mode: "color" },
+        { label: "White", value: "white", mode: "color" },
+        { label: "Sparkling", value: "sparkling", mode: "color" },
+        { label: "Rosé", value: "rosé", mode: "color" }
+      ]
+    };
+  }
+
+  if (responseType === "clarification" && missingFields.includes("varietal")) {
+    return {
+      title: "Pick a grape:",
+      suggestions: [
+        { label: "Chardonnay", value: "Chardonnay", mode: "varietal" },
+        { label: "Pinot Noir", value: "Pinot Noir", mode: "varietal" },
+        { label: "Cabernet Sauvignon", value: "Cabernet Sauvignon", mode: "varietal" },
+        { label: "Sauvignon Blanc", value: "Sauvignon Blanc", mode: "varietal" }
+      ]
+    };
+  }
+
+  if (responseType === "no_results") {
+    return {
+      title: "Try a broader search:",
+      suggestions: [
+        { label: "Under $50", value: "under $50", mode: "budget" },
+        { label: "Red wines", value: "red", mode: "color" },
+        { label: "From France", value: "from France", mode: "append" },
+        { label: "Cabernet Sauvignon", value: "Cabernet Sauvignon", mode: "varietal" }
+      ]
+    };
+  }
+
+  return {
+    title: "",
+    suggestions: []
+  };
+}
+
+/**
+ * Replace an existing budget phrase, or append a new one.
+ */
+function applyBudgetSuggestion(question, budgetPhrase) {
+  let next = question;
+
+  const budgetPatterns = [
+    /\bbetween\s+\$?\d+(?:\.\d+)?\s+(?:and|to)\s+\$?\d+(?:\.\d+)?\b/i,
+    /\b(?:under|below|less than|cheaper than|up to|max|maximum of|over|above|more than|at least|min|minimum of)\s+\$?\d+(?:\.\d+)?\b/i
+  ];
+
+  let replaced = false;
+
+  budgetPatterns.forEach((pattern) => {
+    if (!replaced && pattern.test(next)) {
+      next = next.replace(pattern, budgetPhrase);
+      replaced = true;
+    }
+  });
+
+  if (!replaced) {
+    next = `${next} ${budgetPhrase}`;
+  }
+
+  return normalizeQuestionText(next);
+}
+
+/**
+ * Apply a color suggestion in a more natural way.
+ */
+function applyColorSuggestion(question, color) {
+  let next = question;
+
+  if (/\b(red|white|sparkling|rose|rosé)\s+wines?\b/i.test(next)) {
+    next = next.replace(/\b(red|white|sparkling|rose|rosé)\s+(wine|wines)\b/i, `${color} $2`);
+    return normalizeQuestionText(next);
+  }
+
+  if (/\ba wine\b/i.test(next)) {
+    next = next.replace(/\ba wine\b/i, `a ${color} wine`);
+    return normalizeQuestionText(next);
+  }
+
+  if (/\bwines\b/i.test(next)) {
+    next = next.replace(/\bwines\b/i, `${color} wines`);
+    return normalizeQuestionText(next);
+  }
+
+  if (/\bwine\b/i.test(next)) {
+    next = next.replace(/\bwine\b/i, `${color} wine`);
+    return normalizeQuestionText(next);
+  }
+
+  return normalizeQuestionText(`${next} ${color}`);
+}
+
+/**
+ * Apply a varietal suggestion in a more natural way.
+ */
+function applyVarietalSuggestion(question, varietal) {
+  let next = question;
+
+  if (/\bby grape\b/i.test(next)) {
+    next = next.replace(/\bby grape\b/i, varietal);
+    return normalizeQuestionText(next);
+  }
+
+  if (/\ba wine\b/i.test(next)) {
+    next = next.replace(/\ba wine\b/i, `a ${varietal}`);
+    return normalizeQuestionText(next);
+  }
+
+  if (/\bwines\b/i.test(next)) {
+    next = next.replace(/\bwines\b/i, `${varietal} wines`);
+    return normalizeQuestionText(next);
+  }
+
+  return normalizeQuestionText(`${next} ${varietal}`);
+}
+
+/**
+ * Build the next question when a follow-up chip is clicked.
+ */
+function buildFollowupQuestion(data, suggestion) {
+  const currentQuestion = normalizeQuestionText(
+    data?.query?.original_question || questionInput.value || ""
+  );
+
+  if (!currentQuestion) {
+    return suggestion.value;
+  }
+
+  switch (suggestion.mode) {
+    case "budget":
+      return applyBudgetSuggestion(currentQuestion, suggestion.value);
+
+    case "color":
+      return applyColorSuggestion(currentQuestion, suggestion.value);
+
+    case "varietal":
+      return applyVarietalSuggestion(currentQuestion, suggestion.value);
+
+    case "append":
+    default:
+      return normalizeQuestionText(`${currentQuestion} ${suggestion.value}`);
+  }
+}
+
+/**
+ * Render dynamic follow-up chips for clarification and refinement states.
+ */
+function renderFollowupSuggestions(data) {
+  const config = getFollowupConfig(data);
+
+  followupChips.innerHTML = "";
+
+  if (!config.suggestions.length) {
+    followupSection.classList.add("hidden");
+    return;
+  }
+
+  followupTitle.textContent = config.title;
+
+  config.suggestions.forEach((suggestion) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "followup-chip";
+    button.textContent = suggestion.label;
+
+    button.addEventListener("click", async () => {
+      const nextQuestion = buildFollowupQuestion(data, suggestion);
+      questionInput.value = nextQuestion;
+      await submitQuestion(nextQuestion);
+    });
+
+    followupChips.appendChild(button);
+  });
+
+  followupSection.classList.remove("hidden");
+}
+
+/**
  * Render the backend response into the page.
  */
 function renderResponse(data) {
@@ -175,6 +402,8 @@ function renderResponse(data) {
   matchCountEl.textContent = `${safeText(data.returned_count, 0)} shown / ${safeText(data.total_matches, 0)} total`;
   rankingBasisEl.textContent = safeText(data.ranking_basis_text, "Not provided");
   metaRow.classList.remove("hidden");
+
+  renderFollowupSuggestions(data);
 
   resultsGrid.innerHTML = "";
 
@@ -218,10 +447,8 @@ async function submitQuestion(question) {
 
     renderResponse(data);
 
-    // Store the last backend response so TTS can reuse spoken_summary.
     window.wineAssistantUI.lastResponse = data;
 
-    // Broadcast a custom event so the speech-output layer can react cleanly.
     window.dispatchEvent(
       new CustomEvent("wine-response-ready", {
         detail: data
