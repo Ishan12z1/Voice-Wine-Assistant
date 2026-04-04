@@ -1,18 +1,17 @@
 <!--
 index.html
 
-This file defines the Step 8 and Step 9 browser UI.
-It provides:
-- a text input for typed questions
-- a microphone button for voice input
-- an Ask button for text submission
-- a status area for loading and error messages
-- a summary area for the grounded answer
-- a results grid for matching wines
+This file defines the frontend UI for the wine assistant.
+It supports:
+- typed questions
+- voice input
+- backend-grounded answer summaries
+- wine result cards
+- voice output for the short spoken answer
 
 Why this file exists:
-- It gives the user one simple UI for both typed and spoken queries.
-- It keeps the page structure separate from browser logic and styling.
+- It provides one browser interface for the full text + voice workflow.
+- It keeps structure separate from styling and JavaScript behavior.
 -->
 
 <!DOCTYPE html>
@@ -53,7 +52,7 @@ Why this file exists:
             aria-label="Start voice input"
             title="Speak your question"
           >
-            🎙️
+            Mic
           </button>
 
           <button id="ask-button" type="submit">Ask</button>
@@ -79,7 +78,25 @@ Why this file exists:
 
     <section id="response-section" class="response-section hidden">
       <div class="summary-card">
-        <h2>Answer</h2>
+        <div class="summary-header">
+          <h2>Answer</h2>
+
+          <div class="speech-controls">
+            <label class="toggle-row" for="auto-speak-checkbox">
+              <input id="auto-speak-checkbox" type="checkbox" />
+              <span>Auto speak</span>
+            </label>
+
+            <button id="speak-button" type="button" class="secondary-button">
+              Speak answer
+            </button>
+
+            <button id="stop-speech-button" type="button" class="secondary-button">
+              Stop
+            </button>
+          </div>
+        </div>
+
         <p id="summary-text" class="summary-text"></p>
       </div>
 
@@ -107,5 +124,6 @@ Why this file exists:
 
   <script src="./app.js"></script>
   <script src="./voice.js"></script>
+  <script src="./tts.js"></script>
 </body>
 </html>

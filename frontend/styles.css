@@ -1,14 +1,15 @@
 /*
 styles.css
 
-This file styles the Step 8 and Step 9 frontend.
-It controls layout, buttons, status messages, result cards,
-and the microphone button state for voice capture.
+This file styles the frontend for the wine assistant.
+It covers:
+- layout
+- buttons
+- status messages
+- wine result cards
+- microphone controls
+- speech output controls
 
-Why this file exists:
-- It makes the browser UI readable and usable.
-- It visually distinguishes normal, loading, and listening states.
-- It keeps presentation separate from HTML and JavaScript.
 */
 
 :root {
@@ -20,8 +21,6 @@ Why this file exists:
   --border: #ddd6ce;
   --accent: #6d1f2f;
   --accent-hover: #561827;
-  --success-bg: #eaf6ee;
-  --success-text: #215732;
   --error-bg: #fdecec;
   --error-text: #8c1d1d;
   --loading-bg: #fff6dd;
@@ -134,7 +133,7 @@ body {
   width: 52px;
   min-height: 50px;
   background: #eee7e0;
-  font-size: 1.1rem;
+  font-size: 1rem;
 }
 
 .icon-button:hover {
@@ -205,6 +204,15 @@ body {
   box-shadow: var(--shadow);
 }
 
+.summary-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
 .summary-card h2,
 .results-section h2 {
   margin-top: 0;
@@ -215,6 +223,40 @@ body {
   margin: 0;
   font-size: 1.02rem;
   line-height: 1.6;
+}
+
+.speech-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.secondary-button {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-size: 0.92rem;
+}
+
+.secondary-button:hover {
+  background: #eee7e0;
+}
+
+.secondary-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.toggle-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.92rem;
+  color: var(--text);
 }
 
 .meta-row {

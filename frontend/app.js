@@ -1,10 +1,15 @@
-// app.js
-//
-// This file handles the  browser logic.
-// It listens for user input, sends the question to the backend API,
-// reads the JSON response, and renders the summary and wine cards.
-//
+/*
+app.js
 
+This file handles the main frontend behavior for the wine assistant.
+It sends user questions to the backend API and renders the returned
+summary and wine results.
+
+Why this file exists:
+- It gives typed input and voice input one shared backend request path.
+- It keeps rendering logic separate from speech input and speech output.
+- It exposes a small shared UI API for voice.js and tts.js.
+*/
 
 const API_BASE_URL = "http://127.0.0.1:8000";
 const QUERY_ENDPOINT = `${API_BASE_URL}/query`;
@@ -28,7 +33,7 @@ const resultsGrid = document.getElementById("results-grid");
 const exampleChips = document.querySelectorAll(".example-chip");
 
 /**
- * Show a small status message above the response area.
+ * Show a status message above the response area.
  */
 function setStatus(message, type = "info") {
   statusSection.textContent = message;
@@ -44,7 +49,7 @@ function clearStatus() {
 }
 
 /**
- * Hide all response content before the next request.
+ * Hide all response content before a new request.
  */
 function resetResponseUI() {
   responseSection.classList.add("hidden");
@@ -59,7 +64,7 @@ function resetResponseUI() {
 }
 
 /**
- * Return a fallback text when a field is missing.
+ * Return a fallback display value for missing fields.
  */
 function safeText(value, fallback = "Not available") {
   if (value === null || value === undefined || value === "") {
@@ -69,7 +74,7 @@ function safeText(value, fallback = "Not available") {
 }
 
 /**
- * Format price consistently for display.
+ * Format numeric price values for display.
  */
 function formatPrice(value) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
@@ -83,7 +88,7 @@ function formatPrice(value) {
 }
 
 /**
- * Build one wine result card.
+ * Create one wine result card.
  */
 function createWineCard(wine) {
   const card = document.createElement("article");
@@ -184,7 +189,8 @@ function renderResponse(data) {
 }
 
 /**
- * Send the user's question to the backend.
+ * Submit a question to the backend.
+ * This function is intentionally shared by typed input and voice input.
  */
 async function submitQuestion(question) {
   resetResponseUI();
@@ -206,12 +212,22 @@ async function submitQuestion(question) {
     const data = await response.json();
 
     if (!response.ok) {
-      // FastAPI errors usually return { detail: ... }
       const detail = data?.detail || "The backend returned an error.";
       throw new Error(detail);
     }
 
     renderResponse(data);
+
+    // Store the last backend response so TTS can reuse spoken_summary.
+    window.wineAssistantUI.lastResponse = data;
+
+    // Broadcast a custom event so the speech-output layer can react cleanly.
+    window.dispatchEvent(
+      new CustomEvent("wine-response-ready", {
+        detail: data
+      })
+    );
+
     clearStatus();
   } catch (error) {
     setStatus(`Request failed: ${error.message}`, "error");
@@ -221,7 +237,7 @@ async function submitQuestion(question) {
 }
 
 /**
- * Handle form submission.
+ * Handle typed form submission.
  */
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -236,7 +252,7 @@ form.addEventListener("submit", async (event) => {
 });
 
 /**
- * Let example chips fill the input and submit quickly.
+ * Let example chips quickly populate and submit a question.
  */
 exampleChips.forEach((chip) => {
   chip.addEventListener("click", async () => {
@@ -245,9 +261,14 @@ exampleChips.forEach((chip) => {
     await submitQuestion(question);
   });
 });
+
+/**
+ * Shared UI API used by voice.js and tts.js.
+ */
 window.wineAssistantUI = {
   submitQuestion,
   setStatus,
   clearStatus,
-  questionInput
+  questionInput,
+  lastResponse: null
 };
