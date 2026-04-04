@@ -1,0 +1,93 @@
+<!--
+index.html
+
+This file defines the browser UI.
+It provides the visible structure of the frontend:
+- a text input for the user's wine question
+- an Ask button to send the question to the backend
+- a status area for loading/errors
+- a summary area for the grounded answer text
+- a results grid that displays matching wines
+
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Voice Wine Assistant</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <h1>Wine Assistant</h1>
+      <p class="subtitle">
+        Ask for wines from the collection using plain English.
+      </p>
+    </section>
+
+    <section class="query-panel">
+      <form id="query-form" class="query-form">
+        <label for="question-input" class="label">Ask about the wine collection</label>
+
+        <div class="input-row">
+          <input
+            id="question-input"
+            name="question"
+            type="text"
+            placeholder="Example: Best-rated red wines under $50"
+            autocomplete="off"
+            required
+          />
+          <button id="ask-button" type="submit">Ask</button>
+        </div>
+      </form>
+
+      <div class="example-row">
+        <button class="example-chip" data-question="Best-rated red wines under $50">
+          Best-rated red wines under $50
+        </button>
+        <button class="example-chip" data-question="Show me Cabernet Sauvignon from California">
+          Cabernet Sauvignon from California
+        </button>
+        <button class="example-chip" data-question="Recommend a housewarming gift">
+          Recommend a housewarming gift
+        </button>
+      </div>
+    </section>
+
+    <section id="status-section" class="status-section" aria-live="polite"></section>
+
+    <section id="response-section" class="response-section hidden">
+      <div class="summary-card">
+        <h2>Answer</h2>
+        <p id="summary-text" class="summary-text"></p>
+      </div>
+
+      <div id="meta-row" class="meta-row hidden">
+        <div class="meta-pill">
+          <span class="meta-label">Type</span>
+          <span id="response-type"></span>
+        </div>
+        <div class="meta-pill">
+          <span class="meta-label">Matches</span>
+          <span id="match-count"></span>
+        </div>
+        <div class="meta-pill">
+          <span class="meta-label">Ranking</span>
+          <span id="ranking-basis"></span>
+        </div>
+      </div>
+
+      <section id="results-section" class="results-section hidden">
+        <h2>Matching wines</h2>
+        <div id="results-grid" class="results-grid"></div>
+      </section>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>
