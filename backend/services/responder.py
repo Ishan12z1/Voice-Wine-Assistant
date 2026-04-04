@@ -193,6 +193,18 @@ def _build_short_spoken_summary(query: StructuredWineQuery, retrieval_result: di
 
     return f"I found {total_matches} matches. Here are the top {returned_count}."
 
+def _build_refinement_summary(retrieval_result: dict[str, Any]) -> str:
+    total_matches = retrieval_result["total_matches"]
+    return (
+        f"I found {total_matches} matching wines, which is too broad to show usefully. "
+        f"Please add one more filter like budget, color, country, region, producer, or varietal."
+    )
+
+
+def _build_refinement_spoken_summary(retrieval_result: dict[str, Any]) -> str:
+    total_matches = retrieval_result["total_matches"]
+    return f"I found {total_matches} matches. Please add another filter."
+
 
 def build_response(query: StructuredWineQuery, retrieval_result: dict[str, Any]) -> dict[str, Any]:
     """
@@ -223,14 +235,18 @@ def build_response(query: StructuredWineQuery, retrieval_result: dict[str, Any])
         summary = raw_message or "I need one more detail before I can search the collection."
         spoken_summary = summary
         response_type = "clarification"
-
-    # Case 3: Zero results
+    # Case 3 : Refinment
+    elif retrieval_result.get("needs_refinement"):
+        summary = _build_refinement_summary(retrieval_result)
+        spoken_summary = _build_refinement_spoken_summary(retrieval_result)
+        response_type = "too_many_matches"
+    # Case 4: Zero results
     elif total_matches == 0:
         summary = _build_zero_results_summary(query)
         spoken_summary = _build_short_spoken_summary(query, retrieval_result)
         response_type = "no_results"
 
-    # Case 4: Successful retrieval
+    # Case 5: Successful retrieval
     else:
         summary = _build_success_summary(query, retrieval_result)
         spoken_summary = _build_short_spoken_summary(query, retrieval_result)
