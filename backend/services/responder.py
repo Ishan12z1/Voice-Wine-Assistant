@@ -35,7 +35,7 @@ def _describe_filters(query: StructuredWineQuery) -> str:
     parts: list[str] = []
 
     if f.color is not None:
-        parts.append(f"that are {str(f.color)}")
+        parts.append(f"that are {f.color.value}")
 
     if f.varietal:
         parts.append(f"with varietal '{f.varietal}'")
