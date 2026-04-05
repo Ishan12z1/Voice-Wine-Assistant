@@ -72,6 +72,7 @@ def parse_query(text: str) -> StructuredWineQuery:
             filters=QueryFilters(),
             sort_by=SortBy.RELEVANCE,
             occasion=None,
+            unresolved_entities=[],
         )
 
     unsupported_reason = detect_unsupported_reason(cleaned)
@@ -80,6 +81,7 @@ def parse_query(text: str) -> StructuredWineQuery:
             question=cleaned,
             reason=unsupported_reason,
             confidence=0.99,
+            unresolved_entities=[],
         )
 
     filters = QueryFilters()
@@ -118,8 +120,8 @@ def parse_query(text: str) -> StructuredWineQuery:
     if occasion_conf is not None:
         confidence_parts.append(occasion_conf)
 
-    # Dataset-backed entity matching
-    filters, match_scores = apply_dataset_matches(cleaned, filters)
+    # Dataset-backed entity matching + unresolved entity detection
+    filters, match_scores, unresolved_entities = apply_dataset_matches(cleaned, filters)
     confidence_parts.extend(match_scores)
 
     # Require varietal data when the prompt explicitly depends on grape/varietal.
@@ -170,6 +172,7 @@ def parse_query(text: str) -> StructuredWineQuery:
             filters=filters,
             sort_by=detected_sort,
             occasion=occasion,
+            unresolved_entities=unresolved_entities,
         )
 
     # Intent inference
@@ -192,4 +195,5 @@ def parse_query(text: str) -> StructuredWineQuery:
         limit=limit,
         confidence=confidence,
         occasion=occasion,
+        unresolved_entities=unresolved_entities,
     )

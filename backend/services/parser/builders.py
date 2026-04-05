@@ -6,6 +6,7 @@ from backend.core.schemas import (
     QueryIntent,
     SortBy,
     StructuredWineQuery,
+    UnresolvedEntity,
 )
 
 
@@ -18,11 +19,14 @@ def make_query(
     limit: int = 10,
     confidence: float = 1.0,
     occasion: Occasion | None = None,
+    unresolved_entities: list[UnresolvedEntity] | None = None,
 ) -> StructuredWineQuery:
     """
     Build a normal structured query object.
 
-    This is used when the parser has enough information to run retrieval.
+    unresolved_entities are preserved so later retrieval logic can decide
+    whether the query should still run or should be turned into a grounded
+    no-results response.
     """
     return StructuredWineQuery(
         original_question=question,
@@ -32,6 +36,7 @@ def make_query(
         limit=limit,
         confidence=confidence,
         occasion=occasion,
+        unresolved_entities=unresolved_entities or [],
     )
 
 
@@ -44,13 +49,12 @@ def make_ambiguous_query(
     filters: QueryFilters | None = None,
     sort_by: SortBy = SortBy.RELEVANCE,
     occasion: Occasion | None = None,
+    unresolved_entities: list[UnresolvedEntity] | None = None,
 ) -> StructuredWineQuery:
     """
     Build a structured query that explicitly asks the user for clarification.
 
-    Important:
-    - preserve partial filters already extracted
-    - preserve sort and occasion when available
+    We preserve any partial filters and unresolved entities already found.
     """
     return StructuredWineQuery(
         original_question=question,
@@ -63,6 +67,7 @@ def make_ambiguous_query(
         clarification_message=clarification_message,
         missing_fields=missing_fields,
         occasion=occasion,
+        unresolved_entities=unresolved_entities or [],
     )
 
 
@@ -71,9 +76,10 @@ def make_unsupported_query(
     *,
     reason: str,
     confidence: float = 1.0,
+    unresolved_entities: list[UnresolvedEntity] | None = None,
 ) -> StructuredWineQuery:
     """
-    Build a structured query for requests that are outside the app scope.
+    Build a structured query for requests that are outside the product scope.
     """
     return StructuredWineQuery(
         original_question=question,
@@ -83,4 +89,5 @@ def make_unsupported_query(
         limit=10,
         confidence=confidence,
         unsupported_reason=reason,
+        unresolved_entities=unresolved_entities or [],
     )

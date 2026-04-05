@@ -132,7 +132,32 @@ class QueryFilters(BaseModel):
             for key, value in self.model_dump().items()
             if value is not None
         }
+class UnresolvedEntity(BaseModel):
+    """
+    A user-provided entity that looked meaningful but could not be matched
+    to the current dataset.
 
+    Examples:
+    - country_or_region: "India"
+    - producer: "Some Winery"
+    - varietal: "Mystery Grape"
+
+    In Phase 2 we start by tracking these entities. In the next step,
+    retrieval/responders will use them to avoid returning misleading results.
+    """
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
+
+    # Broad field bucket for the unresolved value.
+    field: str = Field(..., min_length=1)
+
+    # The actual user-facing value we failed to resolve.
+    value: str = Field(..., min_length=1)
+
+    # Optional original phrase or context from the question.
+    phrase: str | None = None
 
 class StructuredWineQuery(BaseModel):
     """
@@ -165,6 +190,10 @@ class StructuredWineQuery(BaseModel):
 
     unsupported_reason: str | None = None
     occasion: Occasion | None = None
+
+    # Explicit user-provided values that looked meaningful but did not match
+    # the current dataset.
+    unresolved_entities: list[UnresolvedEntity] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def fill_defaults_from_intent(self) -> "StructuredWineQuery":
