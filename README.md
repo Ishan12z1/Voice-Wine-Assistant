@@ -303,6 +303,10 @@ docker-compose.yml
 
 ## Setup
 
+### 0. Create the environment file
+
+Copy `.env.example` to `.env` and keep the default dataset path unless you want to point to another processed dataset.
+
 ### 1. Create and activate a virtual environment
 
 Windows PowerShell:
