@@ -1,108 +1,54 @@
-# Wine Info App - Version 1
+# Wine Info App
 
-Version 1 of the Wine Info App is a dataset-grounded wine search assistant that lets users explore a wine collection using plain English. It includes a FastAPI backend, a lightweight browser frontend, structured query parsing, deterministic filtering and ranking, and optional browser-based voice input and spoken responses.
+Wine Info App is a dataset-grounded wine search assistant built with a FastAPI backend and a lightweight browser frontend. It lets users explore a wine collection using plain English, dynamic dataset-backed filters, deterministic ranking, and optional browser voice input and speech output.
 
-## What Version 1 Includes
+The project is designed to stay honest to the underlying dataset. It does not invent unsupported wine facts, and it surfaces unresolved or unavailable requests explicitly when they do not match the active dataset.
 
-- Natural-language wine search such as:
+## Features
+
+- Natural-language wine search
   - `Best-rated red wines under $50`
   - `Show me Cabernet Sauvignon from California`
   - `Recommend a housewarming gift`
-- A FastAPI backend with:
-  - `GET /`
-  - `GET /health`
-  - `POST /query`
-- Structured query parsing that can detect:
+  - `Show me wines with ABV above 14%`
+- Dataset-grounded parsing and validation for:
   - color
-  - price range
   - country
   - region
   - appellation
   - producer
   - varietal
+  - wine name
+  - price range
   - vintage range
   - ABV
   - bottle size
   - score thresholds
-  - recommendation / gift intent
-- Deterministic retrieval pipeline:
-  - parse question
-  - apply dataset-backed filters
-  - rank results
-  - generate grounded response text
-- Ranking strategies for:
-  - best rated
-  - cheapest
-  - most expensive
-  - value-oriented recommendations
-  - newest vintage
-  - alphabetical browsing
-- A frontend UI with:
-  - typed search
-  - example prompts
-  - result cards with wine facts
-  - follow-up suggestion chips
-  - browser speech-to-text input
-  - browser text-to-speech output
-- Dataset-backed behavior only:
-  - unsupported educational or invented-answer requests are rejected honestly
-  - broad searches may ask the user to refine the request
+  - occasion / recommendation intent
+- Deterministic retrieval and ranking
+- Grounded no-result handling and unresolved entity tracking
+- Backend-driven follow-up suggestions
+- Pagination and refinement support
+- Dynamic frontend filter panel backed by dataset metadata
+- Browser speech-to-text input
+- Browser text-to-speech output
 
-## Current Project Structure
+## How It Works
 
-```text
-backend/
-  api/
-    main.py
-    models.py
-  core/
-    data_loader.py
-    schemas.py
-  services/
-    parser.py
-    pipeline.py
-    retrieval.py
-    filters.py
-    ranking.py
-    responder.py
-frontend/
-  index.html
-  app.js
-  voice.js
-  tts.js
-  styles.css
-data/
-  raw/
-  processed/
-smoketest/
-requirements.txt
-README.md
-```
+1. The user enters a question, clicks a follow-up suggestion, or applies the filter panel.
+2. The backend parses the request into structured filters and intent.
+3. Supported text fields are grounded against metadata built from the active processed dataset.
+4. Deterministic retrieval applies filters and ranking.
+5. The backend returns:
+   - structured query information
+   - grounded response text
+   - spoken summary text
+   - result rows
+   - pagination metadata
+   - follow-up suggestions
+6. The frontend renders the answer, result cards, pagination controls, filter tools, and speech controls.
 
-## How The App Works
-
-Version 1 follows a simple grounded pipeline:
-
-1. The user asks a question in the frontend or through the API.
-2. The backend parser converts the question into a `StructuredWineQuery`.
-3. Filters are applied against the processed wine dataset.
-4. Matching wines are ranked according to the detected intent or sort mode.
-5. The API returns:
-   - a structured query payload
-   - a grounded summary
-   - a short spoken summary
-   - wine result rows for the UI
-6. The frontend renders the summary and matching wine cards.
-
-## Dataset
-
-The app currently loads its data from:
-
-- `data/processed/wines_enriched.csv`
-
-By default, the backend expects that file to exist. You can also override the dataset path with the `WINE_DATASET_PATH` environment variable.
-
-## API Summary
+## API
 
 ### `GET /`
 Quick check that the API is running.
@@ -110,15 +56,33 @@ Quick check that the API is running.
 ### `GET /health`
 Confirms the backend can load the dataset and returns row and column counts.
 
+### `GET /filters`
+Returns metadata-backed filter options for the frontend.
+
+The filter payload currently includes grounded text filters such as:
+
+- `color`
+- `country`
+- `region`
+- `producer`
+- `varietal`
+
+It also includes numeric ranges such as:
+
+- `price`
+- `abv`
+- `vintage`
+
 ### `POST /query`
 Main natural-language search endpoint.
 
-Example request body:
+Example request:
 
 ```json
 {
   "question": "Best-rated red wines under $50",
-  "limit": 5
+  "page": 1,
+  "page_size": 5
 }
 ```
 
@@ -134,8 +98,104 @@ Example response fields:
 - `total_matches`
 - `returned_count`
 - `wines`
+- `page`
+- `page_size`
+- `total_pages`
+- `has_next_page`
+- `has_prev_page`
+- `followup_suggestions`
 
-## How To Run Version 1
+## Frontend
+
+The browser UI includes:
+
+- typed query input
+- example prompt chips
+- a toggleable filter section
+- grounded follow-up narrowing chips
+- answer summary and result cards
+- pagination controls
+- visible speech controls on page load
+
+### Filter Panel
+
+The filter panel is:
+
+- hidden by default
+- opened by clicking `Show filters`
+- populated dynamically from `GET /filters`
+- collapsed again after `Ask` or `Apply filters`
+
+This keeps available options aligned with the current dataset instead of hardcoded frontend values.
+
+### Voice Features
+
+The frontend supports:
+
+- speech-to-text through `frontend/voice.js`
+- text-to-speech through `frontend/tts.js`
+
+Current behavior:
+
+- speech controls are visible as soon as the page opens
+- auto-speak works for fresh responses
+- follow-up chip clicks can trigger the new answer speech
+- pagination does not auto-speak on every page turn
+
+Voice behavior still depends on browser support for speech APIs.
+
+## Dataset
+
+The project uses:
+
+- raw dataset: `data/raw/Assignment wine dataset - Sheet1.csv`
+- processed runtime dataset: `data/processed/wines_enriched.csv`
+
+By default, the backend loads the processed dataset. You can override the runtime dataset path with:
+
+- `WINE_DATASET_PATH`
+
+The metadata layer is built from the active processed dataset, so grounding, filter options, and suggestions stay aligned with the data the backend is actually using.
+
+## Project Structure
+
+```text
+backend/
+  api/
+    main.py
+    models.py
+  core/
+    data_loader.py
+    dataset_metadata.py
+    schemas.py
+  services/
+    filters.py
+    loader.py
+    pipeline.py
+    ranking.py
+    responder.py
+    retrieval.py
+    parser/
+      builders.py
+      extractors.py
+      matching.py
+      parser.py
+frontend/
+  index.html
+  app.js
+  voice.js
+  tts.js
+  styles.css
+data/
+  raw/
+  processed/
+smoketest/
+tests/
+requirements.txt
+README.md
+```
+
+## Setup
 
 ### 1. Create and activate a virtual environment
 
@@ -152,22 +212,20 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-### 3. Start the backend API
-
-From the project root:
+### 3. Start the backend
 
 ```powershell
 uvicorn backend.api.main:app --reload
 ```
 
-The backend will start at:
+Backend URLs:
 
 - `http://127.0.0.1:8000`
 - Swagger docs: `http://127.0.0.1:8000/docs`
 
 ### 4. Start the frontend
 
-Open a second terminal in the project root and run:
+In a second terminal:
 
 ```powershell
 python -m http.server 5500 --directory frontend
@@ -177,9 +235,9 @@ Then open:
 
 - `http://127.0.0.1:5500`
 
-The frontend is already configured to call the backend at `http://127.0.0.1:8000`.
+The frontend is configured to talk to the backend at `http://127.0.0.1:8000`.
 
-## Example Queries To Try
+## Example Queries
 
 - `Best-rated red wines under $50`
 - `Show me Cabernet Sauvignon from California`
@@ -188,28 +246,87 @@ The frontend is already configured to call the backend at `http://127.0.0.1:8000
 - `Most expensive bottle from Burgundy`
 - `Recommend a housewarming gift`
 - `Show me 750ml sparkling wines from Champagne`
+- `Show me wines with ABV above 14%`
+- `Best red wine in India`
+- `Show me dry red wines`
 
-## Notes About Version 1
+These examples cover both successful searches and grounded failure cases.
 
-- This is a local development version of the app.
-- The frontend voice features depend on browser support for speech APIs.
-- The app is intentionally dataset-grounded and does not invent tasting notes, food pairings, or general wine education answers.
-- Broad requests may return a clarification prompt instead of a long unhelpful result list.
+## Testing
 
-## Optional Health Check
+### Smoke Tests
 
-Once the backend is running, you can verify it with:
+The `smoketest/` folder includes smoke-style scripts such as:
+
+- `smoketest_v2_baseline.py`
+- `smoketest_metadata.py`
+- `smoketest_unresolved_entities.py`
+- `smoketest_pagination_and_refinement.py`
+
+Example runs:
 
 ```powershell
-Invoke-WebRequest http://127.0.0.1:8000/health
+.\.venv\Scripts\python.exe -m smoketest.smoketest_v2_baseline
+.\.venv\Scripts\python.exe -m smoketest.smoketest_metadata
+.\.venv\Scripts\python.exe -m smoketest.smoketest_unresolved_entities
+.\.venv\Scripts\python.exe -m smoketest.smoketest_pagination_and_refinement
 ```
 
-Or open the Swagger docs in the browser:
+### Layered Regression Tests
 
-- `http://127.0.0.1:8000/docs`
+The `tests/` folder contains pytest-style tests for different logical layers:
 
-## Version
+- `test_loader_layer.py`
+- `test_metadata_layer.py`
+- `test_parser_layer.py`
+- `test_pipeline_layer.py`
+- `test_api_layer.py`
+- `test_end_to_end_regressions.py`
+- `test_grounded_query_logic.py`
 
-This README documents:
+These cover:
 
-- `Wine Info App - Version 1`
+- raw-to-clean dataset processing
+- metadata generation and refresh behavior
+- parser extraction and grounding
+- retrieval and pipeline logic
+- API response behavior
+- end-to-end grounded regressions
+
+If `pytest` is installed in the environment, run:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests -q
+```
+
+## Notes
+
+- The app is intentionally dataset-grounded.
+- Unsupported or unavailable requests should return honest responses instead of invented answers.
+- Dynamic filters and grounded matching depend on the processed dataset currently loaded by the backend.
+- Frontend voice features depend on browser support for speech APIs.
+
+## Versions
+
+### Version 1
+
+Version 1 established the core app foundation:
+
+- FastAPI backend
+- browser frontend
+- natural-language wine search
+- deterministic filtering and ranking
+- basic voice input and speech output
+
+### Version 2
+
+Version 2 extended the project with:
+
+- metadata-grounded validation
+- unresolved entity tracking
+- grounded no-result behavior
+- pagination and refinement support
+- backend-driven follow-up suggestions
+- dynamic metadata-backed filter panel
+- improved frontend speech and visibility behavior
+- expanded smoke and regression test coverage
