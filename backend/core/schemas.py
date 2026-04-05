@@ -193,48 +193,68 @@ class StructuredWineQuery(BaseModel):
         return self.filters.active()
 
 
-# A few examples make the schema easier to understand and demo.
-EXAMPLE_STRUCTURED_QUERIES = [
-    {
-        "original_question": "Best-rated red wines under $50",
-        "intent": "best_rated_under_budget",
-        "filters": {
-            "color": "red",
-            "max_price": 50,
-        },
-        "sort_by": "best_score_desc",
-        "limit": 5,
-        "confidence": 0.98,
-    },
-    {
-        "original_question": "Show me Cabernet Sauvignon from California",
-        "intent": "browse_collection",
-        "filters": {
-            "varietal": "Cabernet Sauvignon",
-            "region": "California",
-        },
-        "sort_by": "relevance",
-        "limit": 10,
-        "confidence": 0.96,
-    },
-    {
-        "original_question": "Show me wines from Stag's Leap Wine Cellars under $100",
-        "intent": "browse_collection",
-        "filters": {
-            "producer": "Stag's Leap Wine Cellars",
-            "max_price": 100,
-        },
-        "sort_by": "relevance",
-        "limit": 10,
-        "confidence": 0.95,
-    },
-    {
-        "original_question": "Recommend a housewarming gift",
-        "intent": "gift_recommendation",
-        "filters": {},
-        "sort_by": "value_desc",
-        "limit": 5,
-        "confidence": 0.83,
-        "occasion": "housewarming",
-    },
-]
+class DatasetFieldMetadata(BaseModel):
+    """
+    Metadata for one text-like dataset field such as country, region, producer,
+    varietal, or color.
+    """
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
+
+    field_name: str
+    canonical_column: str | None = None
+
+    # All distinct canonical values found in the dataset for this field.
+    values: list[str] = Field(default_factory=list)
+
+    # Normalized text -> canonical dataset value
+    normalized_to_canonical: dict[str, str] = Field(default_factory=dict)
+
+    # Canonical value -> frequency count in the dataset
+    counts: dict[str, int] = Field(default_factory=dict)
+
+    # Most common values for suggestions / UI chips
+    top_values: list[str] = Field(default_factory=list)
+
+
+class DatasetNumericRangeMetadata(BaseModel):
+    """
+    Min/max metadata for one numeric dataset field such as price, vintage, or ABV.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    field_name: str
+    canonical_column: str | None = None
+    min_value: float | int | None = None
+    max_value: float | int | None = None
+
+
+class DatasetMetadata(BaseModel):
+    """
+    Cached metadata built from the current dataset.
+
+    This becomes the shared source of truth for:
+    - which canonical fields exist
+    - which unique values exist in the dataset
+    - which numeric ranges exist
+    """
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
+
+    dataset_path: str
+    dataset_mtime: float
+
+    available_columns: list[str] = Field(default_factory=list)
+
+    # app field name -> actual dataframe column name
+    canonical_columns: dict[str, str | None] = Field(default_factory=dict)
+
+    # text/categorical field metadata
+    field_indexes: dict[str, DatasetFieldMetadata] = Field(default_factory=dict)
+
+    # numeric field metadata
+    numeric_ranges: dict[str, DatasetNumericRangeMetadata] = Field(default_factory=dict)

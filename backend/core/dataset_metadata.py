@@ -1,0 +1,286 @@
+from __future__ import annotations
+
+import os
+from functools import lru_cache
+
+import pandas as pd
+
+from backend.core.data_loader import DEFAULT_DATASET_PATH, load_wine_dataset
+from backend.core.schemas import (
+    DatasetFieldMetadata,
+    DatasetMetadata,
+    DatasetNumericRangeMetadata,
+)
+from backend.utils.helpers import normalize_text
+
+
+# App-level canonical field names mapped to possible dataframe column names.
+CANONICAL_FIELD_CANDIDATES: dict[str, list[str]] = {
+    "name": ["name", "Name"],
+    "producer": ["producer", "Producer"],
+    "country": ["country", "Country"],
+    "region": ["region", "Region"],
+    "appellation": ["appellation", "Appellation"],
+    "varietal": ["varietal", "Varietal"],
+    "color": ["color", "Color"],
+    "price": ["price", "Retail"],
+    "vintage": ["vintage", "Vintage"],
+    "abv": ["abv", "ABV"],
+    "volume_ml": ["volume_ml"],
+    "best_score": ["best_score"],
+    "avg_score": ["avg_score"],
+    "rating_count": ["rating_count"],
+    "image_url": ["image_url"],
+    "reference_url": ["reference_url"],
+}
+
+TEXT_FIELDS = [
+    "name",
+    "producer",
+    "country",
+    "region",
+    "appellation",
+    "varietal",
+    "color",
+]
+
+NUMERIC_FIELDS = [
+    "price",
+    "vintage",
+    "abv",
+    "volume_ml",
+    "best_score",
+    "avg_score",
+    "rating_count",
+]
+
+
+def _resolve_dataset_path(dataset_path: str | None = None) -> str:
+    """
+    Resolve the active dataset path using the same fallback behavior as the loader.
+    """
+    return dataset_path or os.getenv("WINE_DATASET_PATH", DEFAULT_DATASET_PATH)
+
+
+def _resolve_canonical_column(df: pd.DataFrame, field_name: str) -> str | None:
+    """
+    Find the first dataframe column that matches the canonical app field.
+    """
+    candidates = CANONICAL_FIELD_CANDIDATES.get(field_name, [])
+    for candidate in candidates:
+        if candidate in df.columns:
+            return candidate
+    return None
+
+
+def _extract_text_field_metadata(
+    df: pd.DataFrame,
+    field_name: str,
+    column_name: str | None,
+) -> DatasetFieldMetadata:
+    """
+    Build metadata for one text/categorical field.
+    """
+    if column_name is None:
+        return DatasetFieldMetadata(
+            field_name=field_name,
+            canonical_column=None,
+        )
+
+    values_series = (
+        df[column_name]
+        .dropna()
+        .astype(str)
+        .str.strip()
+    )
+
+    values = [value for value in values_series.tolist() if value]
+    if not values:
+        return DatasetFieldMetadata(
+            field_name=field_name,
+            canonical_column=column_name,
+        )
+
+    counts: dict[str, int] = {}
+    normalized_to_canonical: dict[str, str] = {}
+
+    for value in values:
+        counts[value] = counts.get(value, 0) + 1
+
+        normalized_value = normalize_text(value)
+        if normalized_value and normalized_value not in normalized_to_canonical:
+            normalized_to_canonical[normalized_value] = value
+
+    unique_values = sorted(
+        set(values),
+        key=lambda value: (-len(value), value.lower()),
+    )
+
+    top_values = sorted(
+        counts.keys(),
+        key=lambda value: (-counts[value], value.lower()),
+    )[:10]
+
+    return DatasetFieldMetadata(
+        field_name=field_name,
+        canonical_column=column_name,
+        values=unique_values,
+        normalized_to_canonical=normalized_to_canonical,
+        counts=counts,
+        top_values=top_values,
+    )
+
+
+def _extract_numeric_range_metadata(
+    df: pd.DataFrame,
+    field_name: str,
+    column_name: str | None,
+) -> DatasetNumericRangeMetadata:
+    """
+    Build numeric min/max metadata for one field.
+    """
+    if column_name is None:
+        return DatasetNumericRangeMetadata(
+            field_name=field_name,
+            canonical_column=None,
+        )
+
+    numeric_series = pd.to_numeric(df[column_name], errors="coerce").dropna()
+
+    if numeric_series.empty:
+        return DatasetNumericRangeMetadata(
+            field_name=field_name,
+            canonical_column=column_name,
+            min_value=None,
+            max_value=None,
+        )
+
+    min_value = numeric_series.min()
+    max_value = numeric_series.max()
+
+    # Keep ints as ints where possible, otherwise floats.
+    def _clean_number(value: float | int) -> float | int:
+        float_value = float(value)
+        return int(float_value) if float_value.is_integer() else float_value
+
+    return DatasetNumericRangeMetadata(
+        field_name=field_name,
+        canonical_column=column_name,
+        min_value=_clean_number(min_value),
+        max_value=_clean_number(max_value),
+    )
+
+
+@lru_cache(maxsize=4)
+def _build_dataset_metadata(resolved_path: str, dataset_mtime: float) -> DatasetMetadata:
+    """
+    Internal cached builder keyed by dataset path + modification time.
+
+    If the dataset file changes, the mtime changes, and the cache refreshes.
+    """
+    df = load_wine_dataset(resolved_path)
+
+    canonical_columns = {
+        field_name: _resolve_canonical_column(df, field_name)
+        for field_name in CANONICAL_FIELD_CANDIDATES
+    }
+
+    field_indexes = {
+        field_name: _extract_text_field_metadata(
+            df=df,
+            field_name=field_name,
+            column_name=canonical_columns[field_name],
+        )
+        for field_name in TEXT_FIELDS
+    }
+
+    numeric_ranges = {
+        field_name: _extract_numeric_range_metadata(
+            df=df,
+            field_name=field_name,
+            column_name=canonical_columns[field_name],
+        )
+        for field_name in NUMERIC_FIELDS
+    }
+
+    return DatasetMetadata(
+        dataset_path=resolved_path,
+        dataset_mtime=dataset_mtime,
+        available_columns=list(df.columns),
+        canonical_columns=canonical_columns,
+        field_indexes=field_indexes,
+        numeric_ranges=numeric_ranges,
+    )
+
+
+def get_dataset_metadata(dataset_path: str | None = None) -> DatasetMetadata:
+    """
+    Public entry point for metadata access.
+    """
+    resolved_path = _resolve_dataset_path(dataset_path)
+
+    if not os.path.exists(resolved_path):
+        raise FileNotFoundError(
+            f"Wine dataset not found at: {resolved_path}. "
+            "Set WINE_DATASET_PATH or generate the processed dataset first."
+        )
+
+    dataset_mtime = os.path.getmtime(resolved_path)
+    return _build_dataset_metadata(resolved_path, dataset_mtime)
+
+
+def get_field_values(field_name: str, dataset_path: str | None = None) -> list[str]:
+    """
+    Return all canonical values for one text field.
+    """
+    metadata = get_dataset_metadata(dataset_path)
+    field_meta = metadata.field_indexes.get(field_name)
+
+    if field_meta is None:
+        return []
+
+    return field_meta.values
+
+
+def get_top_field_values(
+    field_name: str,
+    limit: int = 5,
+    dataset_path: str | None = None,
+) -> list[str]:
+    """
+    Return the most frequent values for one field, useful for UI suggestions.
+    """
+    metadata = get_dataset_metadata(dataset_path)
+    field_meta = metadata.field_indexes.get(field_name)
+
+    if field_meta is None:
+        return []
+
+    return field_meta.top_values[: max(limit, 0)]
+
+
+def get_normalized_lookup(
+    field_name: str,
+    dataset_path: str | None = None,
+) -> dict[str, str]:
+    """
+    Return normalized_value -> canonical_value for one text field.
+    """
+    metadata = get_dataset_metadata(dataset_path)
+    field_meta = metadata.field_indexes.get(field_name)
+
+    if field_meta is None:
+        return {}
+
+    return field_meta.normalized_to_canonical
+
+
+def get_canonical_column(
+    field_name: str,
+    dataset_path: str | None = None,
+) -> str | None:
+    """
+    Return the actual dataframe column name for one canonical app field.
+    """
+    metadata = get_dataset_metadata(dataset_path)
+    return metadata.canonical_columns.get(field_name)
