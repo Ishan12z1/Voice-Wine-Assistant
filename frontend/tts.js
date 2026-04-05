@@ -164,12 +164,13 @@ Why this file exists:
   });
 
   window.addEventListener("wine-response-ready", (event) => {
-    const response = event.detail;
+    const response = event.detail?.response || event.detail;
+    const shouldAutoSpeak = event.detail?.autoSpeak !== false;
     if (!response) {
       return;
     }
 
-    if (autoSpeakCheckbox.checked) {
+    if (autoSpeakCheckbox.checked && shouldAutoSpeak) {
       const textToSpeak = response.spoken_summary || response.summary || "";
       speakText(textToSpeak);
     }

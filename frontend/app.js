@@ -388,8 +388,9 @@ function renderResponse(data) {
 }
 
 
-async function submitQuestion(question, page = 1) {
+async function submitQuestion(question, page = 1, options = {}) {
   const normalizedQuestion = normalizeQuestionText(question);
+  const shouldAutoSpeak = options.autoSpeak !== false;
 
   resetResponseUI();
   setStatus("Searching the collection...", "loading");
@@ -427,7 +428,10 @@ async function submitQuestion(question, page = 1) {
 
     window.dispatchEvent(
       new CustomEvent("wine-response-ready", {
-        detail: data
+        detail: {
+          response: data,
+          autoSpeak: shouldAutoSpeak
+        }
       })
     );
 
@@ -446,7 +450,7 @@ async function submitCurrentPage(page) {
     return;
   }
 
-  await submitQuestion(appState.currentQuestion, page);
+  await submitQuestion(appState.currentQuestion, page, { autoSpeak: false });
 }
 
 
