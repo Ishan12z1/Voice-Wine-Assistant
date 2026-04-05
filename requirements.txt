@@ -4,3 +4,4 @@ pandas
 rapidfuzz
 pydantic
 python-multipart
+httpx
