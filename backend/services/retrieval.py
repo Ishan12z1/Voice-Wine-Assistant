@@ -4,6 +4,7 @@ retrieval.py
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import pandas as pd
@@ -61,13 +62,11 @@ def _to_records(df: pd.DataFrame) -> list[dict[str, Any]]:
 
 def _should_require_refinement(query: StructuredWineQuery, total_matches: int) -> bool:
     """
-    Ask the user to narrow the query when the result set is too broad.
+    Decide whether the UI should encourage refinement.
 
-    Current behavior:
-    - always refine if the match count is extremely large
-    - refine broad browse queries if there are many matches and too few filters
-
-    This remains unchanged in 2.3. Soft refinement comes later in V2.
+    Phase 3 behavior:
+    - refinement no longer hides results
+    - it only adds a signal that the query is broad
     """
     active_filter_count = len(query.active_filters())
 
@@ -88,16 +87,12 @@ def _build_unresolved_entities_message(query: StructuredWineQuery) -> str:
     """
     Build a grounded message for explicit user-provided entities that could
     not be matched to the dataset.
-
-    Example:
-    - "best red wine in India" should not silently become generic red wine results.
     """
     unresolved_entities = query.unresolved_entities
 
     if not unresolved_entities:
         return "I could not match one or more requested entities in the current dataset."
 
-    # Start simple: use the first unresolved entity for the main message.
     first_entity = unresolved_entities[0]
     value = first_entity.value
     field = first_entity.field
@@ -114,6 +109,47 @@ def _build_unresolved_entities_message(query: StructuredWineQuery) -> str:
     return f"I could not match '{value}' in the current dataset."
 
 
+def _get_effective_page_size(query: StructuredWineQuery) -> int:
+    """
+    Determine the effective page size for retrieval.
+
+    Priority:
+    1. explicit page_size
+    2. old limit field for backward compatibility
+    """
+    if query.page_size and query.page_size > 0:
+        return query.page_size
+
+    if query.limit and query.limit > 0:
+        return min(query.limit, 20)
+
+    return 10
+
+
+def _paginate_df(df: pd.DataFrame, page: int, page_size: int) -> tuple[pd.DataFrame, int, int, bool, bool]:
+    """
+    Slice a ranked dataframe into one page and return paging metadata.
+    """
+    total_matches = len(df)
+
+    if total_matches == 0:
+        empty_df = df.head(0).reset_index(drop=True)
+        return empty_df, 1, 0, False, False
+
+    total_pages = math.ceil(total_matches / page_size)
+    safe_page = min(max(page, 1), total_pages)
+
+    start_index = (safe_page - 1) * page_size
+    end_index = start_index + page_size
+
+    page_df = df.iloc[start_index:end_index].reset_index(drop=True)
+
+    has_prev_page = safe_page > 1
+    has_next_page = safe_page < total_pages
+
+    return page_df, safe_page, total_pages, has_prev_page, has_next_page
+
+
 def retrieve_wines(df: pd.DataFrame, query: StructuredWineQuery) -> dict[str, Any]:
     """
     Run the retrieval pipeline.
@@ -122,14 +158,22 @@ def retrieve_wines(df: pd.DataFrame, query: StructuredWineQuery) -> dict[str, An
     1. unsupported request
     2. clarification needed
     3. unresolved explicit entities
-    4. normal filtering / ranking
+    4. normal filtering / ranking / pagination
     """
+    page_size = _get_effective_page_size(query)
+    requested_page = query.page if query.page > 0 else 1
+
     if query.intent == QueryIntent.UNSUPPORTED_REQUEST:
         return {
             "query": query.model_dump(),
             "total_matches": 0,
             "returned_count": 0,
             "wines": [],
+            "page": 1,
+            "page_size": page_size,
+            "total_pages": 0,
+            "has_next_page": False,
+            "has_prev_page": False,
             "message": query.unsupported_reason or "This request is not supported by the dataset.",
         }
 
@@ -139,19 +183,25 @@ def retrieve_wines(df: pd.DataFrame, query: StructuredWineQuery) -> dict[str, An
             "total_matches": 0,
             "returned_count": 0,
             "wines": [],
+            "page": 1,
+            "page_size": page_size,
+            "total_pages": 0,
+            "has_next_page": False,
+            "has_prev_page": False,
             "message": query.clarification_message or "More detail is needed to search the collection.",
         }
 
-    # Phase 2.3:
-    # If the parser found explicit entities that looked meaningful but could not
-    # be matched to the dataset, do not silently ignore them.
-    # Instead, stop here and return a grounded no-results message.
     if query.unresolved_entities:
         return {
             "query": query.model_dump(),
             "total_matches": 0,
             "returned_count": 0,
             "wines": [],
+            "page": 1,
+            "page_size": page_size,
+            "total_pages": 0,
+            "has_next_page": False,
+            "has_prev_page": False,
             "message": _build_unresolved_entities_message(query),
             "has_unresolved_entities": True,
         }
@@ -159,29 +209,26 @@ def retrieve_wines(df: pd.DataFrame, query: StructuredWineQuery) -> dict[str, An
     filtered_df = retrieve_filtered_wines(df=df, query=query)
     total_matches = len(filtered_df)
 
-    if _should_require_refinement(query, total_matches):
-        return {
-            "query": query.model_dump(),
-            "total_matches": total_matches,
-            "returned_count": 0,
-            "wines": [],
-            "message": (
-                f"I found {total_matches} matching wines. "
-                "Please narrow the search with one more detail like budget, color, "
-                "country, region, producer, or varietal."
-            ),
-            "needs_refinement": True,
-        }
-
     ranked_df = rank_wines(df=filtered_df, query=query)
 
-    limit = query.limit if query.limit > 0 else 10
-    limited_df = ranked_df.head(limit).reset_index(drop=True)
+    paged_df, safe_page, total_pages, has_prev_page, has_next_page = _paginate_df(
+        ranked_df,
+        requested_page,
+        page_size,
+    )
+
+    needs_refinement = _should_require_refinement(query, total_matches)
 
     return {
         "query": query.model_dump(),
         "total_matches": total_matches,
-        "returned_count": len(limited_df),
-        "wines": _to_records(limited_df),
+        "returned_count": len(paged_df),
+        "wines": _to_records(paged_df),
+        "page": safe_page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "has_next_page": has_next_page,
+        "has_prev_page": has_prev_page,
+        "needs_refinement": needs_refinement,
         "message": None if total_matches > 0 else "No wines matched the requested filters.",
     }

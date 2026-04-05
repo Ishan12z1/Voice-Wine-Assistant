@@ -139,14 +139,41 @@ def _build_success_summary(query: StructuredWineQuery, retrieval_result: dict[st
     """
     total_matches = retrieval_result["total_matches"]
     returned_count = retrieval_result["returned_count"]
+    page = retrieval_result.get("page", 1)
+    total_pages = retrieval_result.get("total_pages", 1)
 
+    filters_text = _describe_filters(query)
+    ranking_text = _describe_ranking(query)
+
+    if total_pages > 1:
+        page_text = f" I am showing page {page} of {total_pages}."
+    else:
+        page_text = ""
+
+    return (
+        f"I found {total_matches} matching {_pluralize('wine', total_matches)} "
+        f"{filters_text} and ranked them by {ranking_text}. "
+        f"Here {'is' if returned_count == 1 else 'are'} the {returned_count} on this page."
+        f"{page_text}"
+    )
+
+
+def _build_soft_refinement_summary(query: StructuredWineQuery, retrieval_result: dict[str, Any]) -> str:
+    """
+    Build a summary for broad queries where we still show page 1 results.
+    """
+    total_matches = retrieval_result["total_matches"]
+    returned_count = retrieval_result["returned_count"]
+    page = retrieval_result.get("page", 1)
+    total_pages = retrieval_result.get("total_pages", 1)
     filters_text = _describe_filters(query)
     ranking_text = _describe_ranking(query)
 
     return (
         f"I found {total_matches} matching {_pluralize('wine', total_matches)} "
         f"{filters_text} and ranked them by {ranking_text}. "
-        f"Here {'is' if returned_count == 1 else 'are'} the top {returned_count}."
+        f"I am showing {returned_count} on page {page} of {total_pages}. "
+        f"You can narrow the search further with budget, color, country, region, producer, or varietal."
     )
 
 
@@ -175,6 +202,10 @@ def _build_short_spoken_summary(query: StructuredWineQuery, retrieval_result: di
     if total_matches == 0:
         return "I could not find any matching wines."
 
+    if retrieval_result.get("needs_refinement"):
+        page = retrieval_result.get("page", 1)
+        return f"I found {total_matches} matches. I am showing page {page}. You can narrow it further."
+
     if query.intent == QueryIntent.CHEAPEST:
         return f"I found {total_matches} matches. Here are the cheapest {returned_count}."
 
@@ -190,35 +221,10 @@ def _build_short_spoken_summary(query: StructuredWineQuery, retrieval_result: di
     return f"I found {total_matches} matches. Here are the top {returned_count}."
 
 
-def _build_refinement_summary(retrieval_result: dict[str, Any]) -> str:
-    """
-    Build the refinement summary for broad result sets.
-
-    Current behavior still hides results for refinement cases.
-    Soft refinement with page 1 results comes later in V2.
-    """
-    total_matches = retrieval_result["total_matches"]
-    return (
-        f"I found {total_matches} matching wines, which is too broad to show usefully. "
-        f"Please add one more filter like budget, color, country, region, producer, or varietal."
-    )
-
-
-def _build_refinement_spoken_summary(retrieval_result: dict[str, Any]) -> str:
-    """
-    Short spoken version of the refinement message.
-    """
-    total_matches = retrieval_result["total_matches"]
-    return f"I found {total_matches} matches. Please add another filter."
-
-
 def _build_unresolved_entity_summary(query: StructuredWineQuery, retrieval_result: dict[str, Any]) -> str:
     """
     Build a grounded response when the user explicitly asked for an entity
     that does not exist in the dataset.
-
-    Example:
-    - "best red wine in India"
     """
     raw_message = retrieval_result.get("message")
     if raw_message:
@@ -249,47 +255,37 @@ def _build_unresolved_entity_spoken_summary(query: StructuredWineQuery, retrieva
 def build_response(query: StructuredWineQuery, retrieval_result: dict[str, Any]) -> dict[str, Any]:
     """
     Build the final response payload.
-
-    This function does not alter the wine list itself. It only adds grounded
-    response text around the retrieval result.
     """
     total_matches = retrieval_result.get("total_matches", 0)
     returned_count = retrieval_result.get("returned_count", 0)
     raw_message = retrieval_result.get("message")
 
-    # Case 1: Unsupported request
     if query.intent == QueryIntent.UNSUPPORTED_REQUEST:
         summary = raw_message or "This request is not supported by the current dataset."
         spoken_summary = summary
         response_type = "unsupported"
 
-    # Case 2: Ambiguous / clarification needed
     elif query.needs_clarification:
         summary = raw_message or "I need one more detail before I can search the collection."
         spoken_summary = summary
         response_type = "clarification"
 
-    # Case 3: Explicit unresolved entity from the parser
     elif query.unresolved_entities and total_matches == 0:
         summary = _build_unresolved_entity_summary(query, retrieval_result)
         spoken_summary = _build_unresolved_entity_spoken_summary(query, retrieval_result)
         response_type = "no_results"
 
-    # Case 4: Refinement
-    elif retrieval_result.get("needs_refinement"):
-        summary = _build_refinement_summary(retrieval_result)
-        spoken_summary = _build_refinement_spoken_summary(retrieval_result)
-        response_type = "too_many_matches"
-
-    # Case 5: Zero results
     elif total_matches == 0:
         summary = _build_zero_results_summary(query)
         spoken_summary = _build_short_spoken_summary(query, retrieval_result)
         response_type = "no_results"
 
-    # Case 6: Successful retrieval
     else:
-        summary = _build_success_summary(query, retrieval_result)
+        if retrieval_result.get("needs_refinement"):
+            summary = _build_soft_refinement_summary(query, retrieval_result)
+        else:
+            summary = _build_success_summary(query, retrieval_result)
+
         spoken_summary = _build_short_spoken_summary(query, retrieval_result)
         response_type = "results"
 
@@ -300,5 +296,5 @@ def build_response(query: StructuredWineQuery, retrieval_result: dict[str, Any])
         "spoken_summary": spoken_summary,
         "applied_filters_text": _describe_filters(query),
         "ranking_basis_text": _describe_ranking(query),
-        "show_results": response_type == "results" and returned_count > 0,
+        "show_results": returned_count > 0,
     }

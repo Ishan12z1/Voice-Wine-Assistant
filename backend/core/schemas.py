@@ -162,9 +162,6 @@ class UnresolvedEntity(BaseModel):
 class StructuredWineQuery(BaseModel):
     """
     Main internal query contract for the app.
-
-    Step 4 will parse raw user text into this object.
-    Step 5+ will consume it deterministically.
     """
     model_config = ConfigDict(
         extra="forbid",
@@ -178,7 +175,14 @@ class StructuredWineQuery(BaseModel):
     filters: QueryFilters = Field(default_factory=QueryFilters)
 
     sort_by: SortBy = SortBy.RELEVANCE
+
+    # Keep limit for backward compatibility with the current codebase.
+    # In Phase 3, page_size becomes the main paging control.
     limit: int = Field(default=10, ge=1, le=50)
+
+    # Pagination fields for V2 browsing.
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=10, ge=1, le=20)
 
     # Parser confidence is useful for Step 4 and later fallback logic.
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
@@ -220,7 +224,6 @@ class StructuredWineQuery(BaseModel):
 
     def active_filters(self) -> dict[str, Any]:
         return self.filters.active()
-
 
 class DatasetFieldMetadata(BaseModel):
     """

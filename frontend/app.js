@@ -4,15 +4,12 @@ app.js
 This file handles the main frontend behavior for the wine assistant.
 It sends user questions to the backend API and renders the returned
 summary and wine results.
-
-Why this file exists:
-- It gives typed input and voice input one shared backend request path.
-- It keeps rendering logic separate from speech input and speech output.
-- It exposes a small shared UI API for voice.js and tts.js.
 */
 
 const API_BASE_URL = "http://127.0.0.1:8000";
 const QUERY_ENDPOINT = `${API_BASE_URL}/query`;
+
+const DEFAULT_PAGE_SIZE = 12;
 
 const form = document.getElementById("query-form");
 const questionInput = document.getElementById("question-input");
@@ -34,7 +31,23 @@ const rankingBasisEl = document.getElementById("ranking-basis");
 const resultsSection = document.getElementById("results-section");
 const resultsGrid = document.getElementById("results-grid");
 
+const paginationSection = document.getElementById("pagination-section");
+const prevPageButton = document.getElementById("prev-page-button");
+const nextPageButton = document.getElementById("next-page-button");
+const pageIndicator = document.getElementById("page-indicator");
+
 const exampleChips = document.querySelectorAll(".example-chip");
+
+/**
+ * App-level UI state for pagination and repeated queries.
+ */
+const appState = {
+  currentQuestion: "",
+  currentPage: 1,
+  currentPageSize: DEFAULT_PAGE_SIZE,
+  isLoading: false
+};
+
 
 /**
  * Show a status message above the response area.
@@ -44,6 +57,7 @@ function setStatus(message, type = "info") {
   statusSection.className = `status-section ${type}`;
 }
 
+
 /**
  * Clear the current status message.
  */
@@ -52,12 +66,14 @@ function clearStatus() {
   statusSection.className = "status-section";
 }
 
+
 /**
  * Normalize extra whitespace.
  */
 function normalizeQuestionText(text) {
   return String(text || "").replace(/\s+/g, " ").trim();
 }
+
 
 /**
  * Hide all response content before a new request.
@@ -67,6 +83,7 @@ function resetResponseUI() {
   resultsSection.classList.add("hidden");
   metaRow.classList.add("hidden");
   followupSection.classList.add("hidden");
+  paginationSection.classList.add("hidden");
 
   summaryText.textContent = "";
   responseTypeEl.textContent = "";
@@ -75,7 +92,9 @@ function resetResponseUI() {
   resultsGrid.innerHTML = "";
   followupTitle.textContent = "Try one of these next:";
   followupChips.innerHTML = "";
+  pageIndicator.textContent = "Page 1 of 1";
 }
+
 
 /**
  * Return a fallback display value for missing fields.
@@ -86,6 +105,7 @@ function safeText(value, fallback = "Not available") {
   }
   return String(value);
 }
+
 
 /**
  * Format numeric price values for display.
@@ -100,6 +120,7 @@ function formatPrice(value) {
     currency: "USD"
   }).format(Number(value));
 }
+
 
 /**
  * Create one wine result card.
@@ -177,14 +198,19 @@ function createWineCard(wine) {
   return card;
 }
 
+
 /**
  * Return suggestion config based on response state.
+ *
+ * Phase 3 change:
+ * - if backend marks needs_refinement=true, still show narrowing chips
+ *   even though results are visible on the page.
  */
 function getFollowupConfig(data) {
   const responseType = data?.response_type || "";
   const missingFields = data?.query?.missing_fields || [];
 
-  if (responseType === "too_many_matches") {
+  if (data?.needs_refinement) {
     return {
       title: "Narrow it down:",
       suggestions: [
@@ -249,6 +275,7 @@ function getFollowupConfig(data) {
   };
 }
 
+
 /**
  * Replace an existing budget phrase, or append a new one.
  */
@@ -275,6 +302,7 @@ function applyBudgetSuggestion(question, budgetPhrase) {
 
   return normalizeQuestionText(next);
 }
+
 
 /**
  * Apply a color suggestion in a more natural way.
@@ -305,6 +333,7 @@ function applyColorSuggestion(question, color) {
   return normalizeQuestionText(`${next} ${color}`);
 }
 
+
 /**
  * Apply a varietal suggestion in a more natural way.
  */
@@ -329,8 +358,12 @@ function applyVarietalSuggestion(question, varietal) {
   return normalizeQuestionText(`${next} ${varietal}`);
 }
 
+
 /**
  * Build the next question when a follow-up chip is clicked.
+ *
+ * Phase 3 change:
+ * - always reset paging to page 1 when the question changes
  */
 function buildFollowupQuestion(data, suggestion) {
   const currentQuestion = normalizeQuestionText(
@@ -357,8 +390,9 @@ function buildFollowupQuestion(data, suggestion) {
   }
 }
 
+
 /**
- * Render dynamic follow-up chips for clarification and refinement states.
+ * Render dynamic follow-up chips.
  */
 function renderFollowupSuggestions(data) {
   const config = getFollowupConfig(data);
@@ -381,7 +415,11 @@ function renderFollowupSuggestions(data) {
     button.addEventListener("click", async () => {
       const nextQuestion = buildFollowupQuestion(data, suggestion);
       questionInput.value = nextQuestion;
-      await submitQuestion(nextQuestion);
+
+      appState.currentQuestion = nextQuestion;
+      appState.currentPage = 1;
+
+      await submitQuestion(nextQuestion, 1);
     });
 
     followupChips.appendChild(button);
@@ -389,6 +427,27 @@ function renderFollowupSuggestions(data) {
 
   followupSection.classList.remove("hidden");
 }
+
+
+/**
+ * Render pagination controls.
+ */
+function renderPagination(data) {
+  const totalPages = Number(data?.total_pages || 0);
+  const page = Number(data?.page || 1);
+
+  if (!data?.show_results || totalPages <= 1) {
+    paginationSection.classList.add("hidden");
+    return;
+  }
+
+  pageIndicator.textContent = `Page ${page} of ${totalPages}`;
+  prevPageButton.disabled = !data?.has_prev_page || appState.isLoading;
+  nextPageButton.disabled = !data?.has_next_page || appState.isLoading;
+
+  paginationSection.classList.remove("hidden");
+}
+
 
 /**
  * Render the backend response into the page.
@@ -415,16 +474,24 @@ function renderResponse(data) {
   } else {
     resultsSection.classList.add("hidden");
   }
+
+  renderPagination(data);
 }
+
 
 /**
  * Submit a question to the backend.
- * This function is intentionally shared by typed input and voice input.
+ *
+ * Phase 3 change:
+ * - supports page + page_size
  */
-async function submitQuestion(question) {
+async function submitQuestion(question, page = 1) {
+  const normalizedQuestion = normalizeQuestionText(question);
+
   resetResponseUI();
   setStatus("Searching the collection...", "loading");
   askButton.disabled = true;
+  appState.isLoading = true;
 
   try {
     const response = await fetch(QUERY_ENDPOINT, {
@@ -433,8 +500,9 @@ async function submitQuestion(question) {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        question,
-        limit: 5
+        question: normalizedQuestion,
+        page,
+        page_size: appState.currentPageSize
       })
     });
 
@@ -444,6 +512,11 @@ async function submitQuestion(question) {
       const detail = data?.detail || "The backend returned an error.";
       throw new Error(detail);
     }
+
+    appState.currentQuestion = normalizedQuestion;
+    appState.currentPage = Number(data?.page || page);
+    appState.isLoading = false;
+    askButton.disabled = false;
 
     renderResponse(data);
 
@@ -460,8 +533,22 @@ async function submitQuestion(question) {
     setStatus(`Request failed: ${error.message}`, "error");
   } finally {
     askButton.disabled = false;
+    appState.isLoading = false;
   }
 }
+
+
+/**
+ * Load another page for the same current question.
+ */
+async function submitCurrentPage(page) {
+  if (!appState.currentQuestion) {
+    return;
+  }
+
+  await submitQuestion(appState.currentQuestion, page);
+}
+
 
 /**
  * Handle typed form submission.
@@ -475,8 +562,12 @@ form.addEventListener("submit", async (event) => {
     return;
   }
 
-  await submitQuestion(question);
+  appState.currentQuestion = question;
+  appState.currentPage = 1;
+
+  await submitQuestion(question, 1);
 });
+
 
 /**
  * Let example chips quickly populate and submit a question.
@@ -485,9 +576,28 @@ exampleChips.forEach((chip) => {
   chip.addEventListener("click", async () => {
     const question = chip.dataset.question || "";
     questionInput.value = question;
-    await submitQuestion(question);
+
+    appState.currentQuestion = question;
+    appState.currentPage = 1;
+
+    await submitQuestion(question, 1);
   });
 });
+
+
+/**
+ * Pagination button handlers.
+ */
+prevPageButton.addEventListener("click", async () => {
+  const previousPage = Math.max(appState.currentPage - 1, 1);
+  await submitCurrentPage(previousPage);
+});
+
+nextPageButton.addEventListener("click", async () => {
+  const nextPage = appState.currentPage + 1;
+  await submitCurrentPage(nextPage);
+});
+
 
 /**
  * Shared UI API used by voice.js and tts.js.

@@ -2,11 +2,6 @@
 models.py
 
 This file defines the request and response models used by the FastAPI layer.
-
-Why this file exists:
-- It keeps HTTP payload validation separate from business logic.
-- It makes the API contract explicit.
-- It helps the frontend know exactly what the backend returns.
 """
 
 from __future__ import annotations
@@ -26,7 +21,13 @@ class WineQueryRequest(BaseModel):
     )
 
     question: str = Field(..., min_length=1, description="Natural-language wine question")
+
+    # Backward-compatible override for old callers.
     limit: int | None = Field(default=None, ge=1, le=50, description="Optional override for result count")
+
+    # Phase 3 pagination fields.
+    page: int = Field(default=1, ge=1, description="Page number to return")
+    page_size: int = Field(default=10, ge=1, le=20, description="Number of wines per page")
 
 
 class WineQueryResponse(BaseModel):
@@ -46,6 +47,13 @@ class WineQueryResponse(BaseModel):
     total_matches: int
     returned_count: int
     wines: list[dict[str, Any]]
+
+    # Pagination metadata
+    page: int
+    page_size: int
+    total_pages: int
+    has_next_page: bool
+    has_prev_page: bool
 
     message: str | None = None
 

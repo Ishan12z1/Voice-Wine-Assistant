@@ -2,14 +2,6 @@
 main.py
 
 This file exposes the FastAPI application for the wine assistant backend.
-It provides:
-- a health endpoint to verify the service is up
-- a query endpoint that runs the full Step 4 -> Step 5 -> Step 6 pipeline
-
-Why this file exists:
-- It turns the backend into a real HTTP service.
-- It keeps the API layer thin and delegates business logic to services.
-- It prepares the project for frontend or voice-client integration.
 """
 
 from __future__ import annotations
@@ -29,7 +21,6 @@ app = FastAPI(
     description="Dataset-grounded wine query backend",
 )
 
-# Allow frontend apps to call this API during development.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -76,7 +67,8 @@ def query_wines(payload: WineQueryRequest) -> WineQueryResponse:
     Example input:
     {
         "question": "Best-rated red wines under $50",
-        "limit": 5
+        "page": 1,
+        "page_size": 10
     }
     """
     dataset_path = os.getenv("WINE_DATASET_PATH", DEFAULT_DATASET_PATH)
@@ -87,6 +79,8 @@ def query_wines(payload: WineQueryRequest) -> WineQueryResponse:
             question=payload.question,
             df=df,
             limit_override=payload.limit,
+            page_override=payload.page,
+            page_size_override=payload.page_size,
         )
         return WineQueryResponse.model_validate(response_payload)
 
@@ -94,15 +88,12 @@ def query_wines(payload: WineQueryRequest) -> WineQueryResponse:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     except ValueError as exc:
-        # Used for bad request inputs such as blank questions.
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     except RuntimeError as exc:
-        # Used for internal integration issues, such as missing parser wiring.
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     except Exception as exc:
-        # Final safety net so the API fails cleanly instead of crashing noisily.
         raise HTTPException(
             status_code=500,
             detail=f"Unexpected server error: {exc}",

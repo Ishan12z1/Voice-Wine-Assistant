@@ -327,6 +327,29 @@ body {
   gap: 16px;
 }
 
+.results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.pagination-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.page-indicator {
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+.pagination-section .secondary-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 .wine-card {
   display: grid;
   grid-template-columns: 110px 1fr;
