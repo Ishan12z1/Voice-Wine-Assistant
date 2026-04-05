@@ -56,6 +56,7 @@ class WineQueryResponse(BaseModel):
     has_prev_page: bool
 
     message: str | None = None
+    followup_suggestions: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class HealthResponse(BaseModel):

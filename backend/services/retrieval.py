@@ -9,7 +9,7 @@ from typing import Any
 
 import pandas as pd
 
-from backend.core.schemas import QueryIntent, StructuredWineQuery
+from backend.core.schemas import QueryIntent, StructuredWineQuery, UnresolvedReason
 from backend.services.filters import retrieve_filtered_wines
 from backend.services.ranking import rank_wines
 
@@ -96,6 +96,10 @@ def _build_unresolved_entities_message(query: StructuredWineQuery) -> str:
     first_entity = unresolved_entities[0]
     value = first_entity.value
     field = first_entity.field
+    reason = first_entity.reason
+
+    if reason == UnresolvedReason.FIELD_MISSING_FROM_DATASET:
+        return f"The current dataset does not include {value} information."
 
     if field == "country_or_region":
         return f"I could not find wines from {value} in the current dataset."
@@ -105,6 +109,9 @@ def _build_unresolved_entities_message(query: StructuredWineQuery) -> str:
 
     if field == "varietal":
         return f"I could not find wines with varietal {value} in the current dataset."
+
+    if field == "name":
+        return f"I could not find a wine named {value} in the current dataset."
 
     return f"I could not match '{value}' in the current dataset."
 

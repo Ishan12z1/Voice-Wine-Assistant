@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from backend.core.schemas import QueryIntent, SortBy, StructuredWineQuery
+from backend.core.dataset_metadata import get_top_field_values
+from backend.core.schemas import QueryIntent, SortBy, StructuredWineQuery, UnresolvedReason
 
 
 def _pluralize(word: str, count: int) -> str:
@@ -26,6 +27,123 @@ def _format_price(value: float | int | None) -> str:
     if value is None:
         return ""
     return f"${value:,.0f}" if float(value).is_integer() else f"${value:,.2f}"
+
+
+def _make_suggestion(label: str, value: str, mode: str = "append") -> dict[str, str]:
+    return {
+        "label": label,
+        "value": value,
+        "mode": mode,
+    }
+
+
+def _dedupe_suggestions(suggestions: list[dict[str, str]]) -> list[dict[str, str]]:
+    deduped: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    for suggestion in suggestions:
+        key = (
+            suggestion.get("label", ""),
+            suggestion.get("value", ""),
+            suggestion.get("mode", ""),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(suggestion)
+
+    return deduped
+
+
+def _build_field_value_suggestions(field_name: str, values: list[str]) -> list[dict[str, str]]:
+    suggestions: list[dict[str, str]] = []
+
+    for value in values:
+        if field_name in {"country", "region", "appellation", "country_or_region"}:
+            suggestions.append(_make_suggestion(value, f"from {value}", "append"))
+        elif field_name == "producer":
+            suggestions.append(_make_suggestion(value, f"from {value}", "append"))
+        elif field_name == "varietal":
+            suggestions.append(_make_suggestion(value, value, "varietal"))
+        elif field_name == "color":
+            suggestions.append(_make_suggestion(value.title(), value, "color"))
+        elif field_name == "name":
+            suggestions.append(_make_suggestion(value, f"called {value}", "append"))
+        else:
+            suggestions.append(_make_suggestion(value, value, "append"))
+
+    return suggestions
+
+
+def _build_clarification_suggestions(query: StructuredWineQuery) -> list[dict[str, str]]:
+    missing_fields = query.missing_fields
+
+    if "budget" in missing_fields:
+        return [
+            _make_suggestion("Under $25", "under $25", "budget"),
+            _make_suggestion("Under $50", "under $50", "budget"),
+            _make_suggestion("Between $30 and $60", "between $30 and $60", "budget"),
+        ]
+
+    if "color" in missing_fields:
+        colors = get_top_field_values("color", limit=4)
+        return _build_field_value_suggestions("color", colors or ["red", "white", "sparkling", "rose"])
+
+    if "varietal" in missing_fields:
+        return _build_field_value_suggestions("varietal", get_top_field_values("varietal", limit=4))
+
+    if "budget_or_style" in missing_fields:
+        return _dedupe_suggestions(
+            [
+                _make_suggestion("Under $30", "under $30", "budget"),
+                *_build_field_value_suggestions("color", get_top_field_values("color", limit=2)),
+                *_build_field_value_suggestions("country", get_top_field_values("country", limit=2)),
+            ]
+        )[:4]
+
+    return []
+
+
+def _build_refinement_suggestions() -> list[dict[str, str]]:
+    suggestions = [
+        _make_suggestion("Under $30", "under $30", "budget"),
+        *_build_field_value_suggestions("color", get_top_field_values("color", limit=2)),
+        *_build_field_value_suggestions("country", get_top_field_values("country", limit=2)),
+        *_build_field_value_suggestions("varietal", get_top_field_values("varietal", limit=2)),
+    ]
+    return _dedupe_suggestions(suggestions)[:6]
+
+
+def _build_unresolved_suggestions(query: StructuredWineQuery) -> list[dict[str, str]]:
+    if not query.unresolved_entities:
+        return []
+
+    first_entity = query.unresolved_entities[0]
+
+    if first_entity.closest_matches:
+        return _build_field_value_suggestions(first_entity.field, first_entity.closest_matches)
+
+    if first_entity.reason == UnresolvedReason.FIELD_MISSING_FROM_DATASET:
+        return _dedupe_suggestions(
+            [
+                *_build_field_value_suggestions("country", get_top_field_values("country", limit=2)),
+                *_build_field_value_suggestions("color", get_top_field_values("color", limit=2)),
+                *_build_field_value_suggestions("varietal", get_top_field_values("varietal", limit=2)),
+            ]
+        )[:6]
+
+    fallback_field = "country" if first_entity.field == "country_or_region" else first_entity.field
+    return _build_field_value_suggestions(fallback_field, get_top_field_values(fallback_field, limit=3))
+
+
+def _build_no_results_suggestions() -> list[dict[str, str]]:
+    return _dedupe_suggestions(
+        [
+            _make_suggestion("Under $50", "under $50", "budget"),
+            *_build_field_value_suggestions("color", get_top_field_values("color", limit=2)),
+            *_build_field_value_suggestions("country", get_top_field_values("country", limit=2)),
+        ]
+    )[:5]
 
 
 def _describe_filters(query: StructuredWineQuery) -> str:
@@ -234,6 +352,16 @@ def _build_unresolved_entity_summary(query: StructuredWineQuery, retrieval_resul
         return "I could not match one or more requested entities in the current dataset."
 
     first_entity = query.unresolved_entities[0]
+    if first_entity.reason == UnresolvedReason.FIELD_MISSING_FROM_DATASET:
+        return (
+            f"The current dataset does not include {first_entity.value} information. "
+            f"Try filtering by country, color, producer, varietal, budget, or score instead."
+        )
+
+    if first_entity.closest_matches:
+        matches_text = ", ".join(first_entity.closest_matches[:3])
+        return f"I could not match '{first_entity.value}' in the current dataset. Closest grounded options are {matches_text}."
+
     return f"I could not match '{first_entity.value}' in the current dataset."
 
 
@@ -249,7 +377,30 @@ def _build_unresolved_entity_spoken_summary(query: StructuredWineQuery, retrieva
         return "I could not match one or more requested entities."
 
     first_entity = query.unresolved_entities[0]
+    if first_entity.reason == UnresolvedReason.FIELD_MISSING_FROM_DATASET:
+        return f"The current dataset does not include {first_entity.value} information."
+
     return f"I could not match {first_entity.value} in the current dataset."
+
+
+def _build_followup_suggestions(
+    query: StructuredWineQuery,
+    retrieval_result: dict[str, Any],
+    response_type: str,
+) -> list[dict[str, str]]:
+    if response_type == "clarification":
+        return _build_clarification_suggestions(query)
+
+    if query.unresolved_entities and retrieval_result.get("total_matches", 0) == 0:
+        return _build_unresolved_suggestions(query)
+
+    if retrieval_result.get("needs_refinement"):
+        return _build_refinement_suggestions()
+
+    if response_type == "no_results":
+        return _build_no_results_suggestions()
+
+    return []
 
 
 def build_response(query: StructuredWineQuery, retrieval_result: dict[str, Any]) -> dict[str, Any]:
@@ -289,6 +440,8 @@ def build_response(query: StructuredWineQuery, retrieval_result: dict[str, Any])
         spoken_summary = _build_short_spoken_summary(query, retrieval_result)
         response_type = "results"
 
+    followup_suggestions = _build_followup_suggestions(query, retrieval_result, response_type)
+
     return {
         **retrieval_result,
         "response_type": response_type,
@@ -297,4 +450,5 @@ def build_response(query: StructuredWineQuery, retrieval_result: dict[str, Any])
         "applied_filters_text": _describe_filters(query),
         "ranking_basis_text": _describe_ranking(query),
         "show_results": returned_count > 0,
+        "followup_suggestions": followup_suggestions,
     }
