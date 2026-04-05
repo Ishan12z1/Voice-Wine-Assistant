@@ -11,8 +11,7 @@ import os
 from functools import lru_cache
 
 import pandas as pd
-
-DEFAULT_DATASET_PATH = "data/processed/wines_enriched.csv"
+from backend.core.settings import get_configured_dataset_path
 
 NUMERIC_COLUMNS = [
     "price",
@@ -43,12 +42,12 @@ def load_wine_dataset(dataset_path: str | None = None) -> pd.DataFrame:
     """
     Load the enriched dataset and refresh the cache if the file changes.
     """
-    resolved_path = dataset_path or os.getenv("WINE_DATASET_PATH", DEFAULT_DATASET_PATH)
+    resolved_path = dataset_path or get_configured_dataset_path()
 
     if not os.path.exists(resolved_path):
         raise FileNotFoundError(
             f"Wine dataset not found at: {resolved_path}. "
-            "Set WINE_DATASET_PATH or generate Step 2 outputs first."
+            "Update WINE_DATASET_PATH in .env or generate the processed dataset first."
         )
 
     dataset_mtime = os.path.getmtime(resolved_path)

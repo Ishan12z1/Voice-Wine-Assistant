@@ -7,13 +7,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.core.data_loader import DEFAULT_DATASET_PATH, load_wine_dataset
+from backend.core.data_loader import load_wine_dataset
+from backend.core.settings import get_configured_dataset_path
 from backend.core.dataset_metadata import get_closest_field_values, resolve_field_value
 from backend.services.pipeline import run_query_pipeline
 
 
 def _load_df():
-    return load_wine_dataset(DEFAULT_DATASET_PATH)
+    return load_wine_dataset(get_configured_dataset_path())
 
 
 def test_metadata_helpers_ground_against_current_dataset() -> None:

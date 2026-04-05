@@ -155,7 +155,41 @@ By default, the backend loads the processed dataset. You can override the runtim
 
 - `WINE_DATASET_PATH`
 
-The metadata layer is built from the active processed dataset, so grounding, filter options, and suggestions stay aligned with the data the backend is actually using.
+The backend now loads `.env` automatically from the repo root, and the active runtime dataset comes from `WINE_DATASET_PATH` there. The metadata layer is built from that same active processed dataset, so grounding, filter options, and suggestions stay aligned with the data the backend is actually using.
+
+### Refreshing The Dataset
+
+If you update the raw CSV and want to rebuild the processed files in one step, run:
+
+```powershell
+.\scripts\refresh_dataset.ps1
+```
+
+This script:
+
+- reads the raw CSV
+- rebuilds `data/processed/wines_clean.csv`
+- rebuilds `data/processed/wines_enriched.csv`
+- relies on the backend's existing auto-refresh behavior for dataset metadata
+
+You can also point it at custom paths:
+
+```powershell
+.\scripts\refresh_dataset.ps1 `
+  -RawPath "data/raw/my_new_wines.csv" `
+  -CleanPath "data/processed/my_clean.csv" `
+  -EnrichedPath "data/processed/my_enriched.csv"
+```
+
+If you want the app to switch to a custom enriched dataset and persist that change in `.env`, run:
+
+```powershell
+.\scripts\refresh_dataset.ps1 `
+  -EnrichedPath "data/processed/my_enriched.csv" `
+  -UpdateEnv
+```
+
+If you write the enriched dataset to a non-default location without `-UpdateEnv`, the script prints the exact `WINE_DATASET_PATH="..."` line to place in `.env`.
 
 ## Project Structure
 

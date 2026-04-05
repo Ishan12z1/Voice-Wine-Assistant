@@ -6,12 +6,13 @@ from functools import lru_cache
 import pandas as pd
 from rapidfuzz import fuzz, process
 
-from backend.core.data_loader import DEFAULT_DATASET_PATH, load_wine_dataset
+from backend.core.data_loader import load_wine_dataset
 from backend.core.schemas import (
     DatasetFieldMetadata,
     DatasetMetadata,
     DatasetNumericRangeMetadata,
 )
+from backend.core.settings import get_configured_dataset_path
 from backend.utils.helpers import best_value_match, normalize_text
 
 
@@ -84,7 +85,7 @@ def _resolve_dataset_path(dataset_path: str | None = None) -> str:
     """
     Resolve the active dataset path using the same fallback behavior as the loader.
     """
-    return dataset_path or os.getenv("WINE_DATASET_PATH", DEFAULT_DATASET_PATH)
+    return dataset_path or get_configured_dataset_path()
 
 
 def _resolve_canonical_column(df: pd.DataFrame, field_name: str) -> str | None:
@@ -247,7 +248,7 @@ def get_dataset_metadata(dataset_path: str | None = None) -> DatasetMetadata:
     if not os.path.exists(resolved_path):
         raise FileNotFoundError(
             f"Wine dataset not found at: {resolved_path}. "
-            "Set WINE_DATASET_PATH or generate the processed dataset first."
+            "Update WINE_DATASET_PATH in .env or generate the processed dataset first."
         )
 
     dataset_mtime = os.path.getmtime(resolved_path)
