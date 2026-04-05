@@ -284,3 +284,10 @@ def get_canonical_column(
     """
     metadata = get_dataset_metadata(dataset_path)
     return metadata.canonical_columns.get(field_name)
+
+def get_field_metadata(field_name: str, dataset_path: str | None = None) -> DatasetFieldMetadata | None:
+    """
+    Return the full metadata object for one field.
+    """
+    metadata = get_dataset_metadata(dataset_path)
+    return metadata.field_indexes.get(field_name)

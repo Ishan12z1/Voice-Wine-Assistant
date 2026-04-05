@@ -2,26 +2,15 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from functools import lru_cache
-from pathlib import Path
 
-import pandas as pd
 from rapidfuzz import fuzz
-
-
-# Default source used by the parser for entity vocab.
-DEFAULT_VOCAB_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "data"
-    / "processed"
-    / "wines_enriched.csv"
-)
 
 
 def normalize_text(text: str) -> str:
     """
     Lowercase, remove accents, remove most punctuation, and collapse spaces.
-    This makes matching much more stable.
+
+    This makes matching much more stable across user phrasing and dataset values.
     """
     text = text or ""
     text = unicodedata.normalize("NFKD", text)
@@ -31,51 +20,12 @@ def normalize_text(text: str) -> str:
     return " ".join(text.split())
 
 
-@lru_cache(maxsize=4)
-def load_parser_vocabulary(data_path: str | None = None) -> dict[str, list[str]]:
-    """
-    Load canonical values from the cleaned dataset once and cache them.
-
-    The parser uses these values for exact and fuzzy matching.
-    """
-    path = Path(data_path) if data_path else DEFAULT_VOCAB_PATH
-
-    # Return empty vocab gracefully if the processed file is missing.
-    base_vocab = {
-        "name": [],
-        "producer": [],
-        "country": [],
-        "region": [],
-        "appellation": [],
-        "varietal": [],
-        "color": ["sparkling", "fortified", "dessert", "white", "red", "rose", "rosé", "other"],
-    }
-
-    if not path.exists():
-        return base_vocab
-
-    df = pd.read_csv(path)
-
-    for field in ["name", "producer", "country", "region", "appellation", "varietal"]:
-        values = (
-            df[field]
-            .dropna()
-            .astype(str)
-            .str.strip()
-        )
-        unique_values = sorted(
-            {value for value in values if value},
-            key=lambda value: (-len(value), value.lower()),
-        )
-        base_vocab[field] = unique_values
-
-    return base_vocab
-
-
 def exact_phrase_match(question: str, candidates: list[str]) -> tuple[str, float] | None:
     """
     Return the first exact phrase match found inside the question.
-    Longer candidates should already appear earlier in the list.
+
+    Longer candidates should already appear earlier in the list so the parser
+    prefers more specific values when an exact match is available.
     """
     normalized_question = f" {normalize_text(question)} "
 
@@ -95,7 +45,9 @@ def fuzzy_phrase_match(
 ) -> tuple[str, float] | None:
     """
     Fuzzy match a dataset value against the full question.
-    We use partial_ratio and token_set_ratio and keep the better score.
+
+    We score each candidate against the normalized question and keep the best
+    one only if it clears the cutoff.
     """
     normalized_question = normalize_text(question)
     if not normalized_question:
@@ -107,7 +59,8 @@ def fuzzy_phrase_match(
     for candidate in candidates:
         normalized_candidate = normalize_text(candidate)
 
-        # Skip ultra-short fuzzy matches because they create noise.
+        # Very short fuzzy candidates tend to create noisy false positives,
+        # so skip them.
         if len(normalized_candidate) < 4:
             continue
 
@@ -135,6 +88,9 @@ def best_value_match(
 ) -> tuple[str, float] | None:
     """
     Prefer exact phrase matches first, then fall back to fuzzy matching.
+
+    This keeps matching deterministic and grounded while still allowing some
+    tolerance for typos or phrasing differences.
     """
     exact_match = exact_phrase_match(question, candidates)
     if exact_match is not None:
@@ -148,7 +104,7 @@ def best_value_match(
 
 def has_any_phrase(question: str, phrases: list[str]) -> bool:
     """
-    Small helper for keyword groups.
+    Return True if any phrase from the list appears in the normalized question.
     """
     normalized_question = normalize_text(question)
     return any(phrase in normalized_question for phrase in phrases)
@@ -167,6 +123,9 @@ def liters_to_ml(value: float, unit: str) -> int:
 
 
 def safe_float(value: str | None) -> float | None:
+    """
+    Safely convert a string-like value to float.
+    """
     if value is None:
         return None
     try:
@@ -176,6 +135,9 @@ def safe_float(value: str | None) -> float | None:
 
 
 def safe_int(value: str | None) -> int | None:
+    """
+    Safely convert a string-like value to int.
+    """
     if value is None:
         return None
     try:

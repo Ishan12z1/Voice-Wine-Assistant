@@ -1,6 +1,8 @@
 from __future__ import annotations
-import re 
 
+import re
+
+from backend.core.dataset_metadata import get_dataset_metadata
 from backend.core.schemas import (
     Occasion,
     QueryFilters,
@@ -14,10 +16,9 @@ from backend.utils.helpers import (
     has_any_phrase,
     liters_to_ml,
     normalize_text,
-    safe_float,safe_int,
+    safe_float,
+    safe_int,
 )
-
-from backend.core.dataset_metadata import get_dataset_metadata
 
 # Out-of-scope education / invented-knowledge style requests.
 UNSUPPORTED_PATTERNS: list[tuple[str, str]] = [
@@ -391,13 +392,24 @@ def detect_sort_preference(question: str) -> tuple[SortBy, float | None]:
 
 def apply_dataset_matches(question: str, filters: QueryFilters) -> tuple[QueryFilters, list[float]]:
     """
-    Fill country / region / appellation / producer / varietal / name from
-    dataset metadata instead of loading a raw parser vocabulary dict.
+    Fill country / region / appellation / producer / varietal / name
+    from dataset metadata.
+
+    This replaces the old raw parser vocabulary loader. The parser now reads
+    field values from the metadata layer, which means the valid values update
+    automatically when the dataset changes.
     """
+    # Load the cached dataset metadata once.
     metadata = get_dataset_metadata()
+
+    # We collect match confidence contributions here so the parser can still
+    # compute an overall confidence score later.
     scores: list[float] = []
+
+    # Normalized question is reused for a couple of rule checks below.
     normalized_question = normalize_text(question)
 
+    # Pull canonical values for each supported text field from metadata.
     country_values = metadata.field_indexes["country"].values
     region_values = metadata.field_indexes["region"].values
     appellation_values = metadata.field_indexes["appellation"].values
@@ -405,41 +417,47 @@ def apply_dataset_matches(question: str, filters: QueryFilters) -> tuple[QueryFi
     varietal_values = metadata.field_indexes["varietal"].values
     name_values = metadata.field_indexes["name"].values
 
+    # Country matching
     country_match = best_value_match(question, country_values, score_cutoff=93, allow_fuzzy=True)
     if country_match:
         filters.country = country_match[0]
         scores.append(country_match[1] / 100)
 
+    # Region matching
     region_match = best_value_match(question, region_values, score_cutoff=91, allow_fuzzy=True)
     if region_match:
         filters.region = region_match[0]
         scores.append(region_match[1] / 100)
 
+    # Appellation matching
     appellation_match = best_value_match(question, appellation_values, score_cutoff=91, allow_fuzzy=True)
     if appellation_match:
         filters.appellation = appellation_match[0]
         scores.append(appellation_match[1] / 100)
 
+    # Producer matching
     producer_match = best_value_match(question, producer_values, score_cutoff=93, allow_fuzzy=True)
     if producer_match:
         filters.producer = producer_match[0]
         scores.append(producer_match[1] / 100)
 
+    # Varietal matching
     varietal_match = best_value_match(question, varietal_values, score_cutoff=92, allow_fuzzy=True)
     if varietal_match:
         filters.varietal = varietal_match[0]
         scores.append(varietal_match[1] / 100)
 
-    # Wine name matching is noisy, so keep it exact-only unless the question
-    # explicitly says "named" or "called".
+    # Wine name matching is intentionally stricter because name matching
+    # tends to be noisy. Only try it when the user explicitly signals that
+    # they are asking for a wine by name.
     if re.search(r"\b(named|called)\b", normalized_question):
         name_match = best_value_match(question, name_values, score_cutoff=96, allow_fuzzy=False)
         if name_match:
             filters.name = name_match[0]
             scores.append(name_match[1] / 100)
 
-    # If the same value matched both region and appellation, keep one to avoid
-    # overly restrictive AND filtering.
+    # If the same text matched both region and appellation, keep only one.
+    # Otherwise the retrieval layer may over-filter with AND logic.
     if filters.region and filters.appellation:
         if normalize_text(filters.region) == normalize_text(filters.appellation):
             if "appellation" in normalized_question or "ava" in normalized_question:
