@@ -72,6 +72,40 @@ Why this file exists:
           Recommend a housewarming gift
         </button>
       </div>
+
+      <div class="filter-toggle-row">
+        <button id="toggle-filters-button" type="button" class="secondary-button">
+          Show filters
+        </button>
+      </div>
+
+      <section id="filter-section" class="filter-section hidden">
+        <div class="filter-section-header">
+          <div>
+            <h2>Browse Filters</h2>
+            <p class="filter-section-copy">
+              Explore the current dataset and build a query from available values.
+            </p>
+          </div>
+
+          <div class="filter-actions">
+            <button id="apply-filters-button" type="button" class="secondary-button">
+              Apply filters
+            </button>
+            <button id="clear-filters-button" type="button" class="secondary-button">
+              Clear
+            </button>
+          </div>
+        </div>
+
+        <p id="filter-status" class="filter-status">Loading dataset filters...</p>
+
+        <form id="filter-form" class="filter-form">
+          <div id="filter-grid" class="filter-grid"></div>
+        </form>
+
+        <p id="filter-query-preview" class="filter-query-preview"></p>
+      </section>
     </section>
 
     <section id="status-section" class="status-section" aria-live="polite"></section>

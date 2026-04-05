@@ -174,6 +174,150 @@ body {
   background: #e5dbd1;
 }
 
+.filter-toggle-row {
+  margin-top: 18px;
+}
+
+.filter-section {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.filter-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.filter-section h2 {
+  margin: 0 0 6px;
+  font-size: 1.2rem;
+}
+
+.filter-section-copy {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.filter-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.filter-status {
+  min-height: 20px;
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.filter-form {
+  margin-top: 16px;
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.filter-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px;
+}
+
+.filter-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.filter-card-title {
+  margin: 0;
+  font-size: 0.96rem;
+  font-weight: 700;
+}
+
+.filter-card-count {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.filter-control,
+.filter-range-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.filter-control:focus,
+.filter-range-input:focus {
+  outline: 2px solid rgba(109, 31, 47, 0.18);
+  border-color: var(--accent);
+}
+
+.filter-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.filter-chip {
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  border-radius: 999px;
+  padding: 7px 10px;
+  cursor: pointer;
+  font-size: 0.84rem;
+  line-height: 1;
+}
+
+.filter-chip:hover {
+  background: #eee7e0;
+}
+
+.filter-hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.filter-range-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.filter-range-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.filter-query-preview {
+  min-height: 20px;
+  margin: 16px 0 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .status-section {
   min-height: 24px;
   margin: 4px 0 18px;
@@ -430,6 +574,19 @@ body {
 @media (max-width: 720px) {
   .input-row {
     grid-template-columns: 1fr;
+  }
+
+  .filter-section-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-actions {
+    width: 100%;
+  }
+
+  .filter-actions .secondary-button {
+    flex: 1 1 0;
   }
 
   #ask-button,

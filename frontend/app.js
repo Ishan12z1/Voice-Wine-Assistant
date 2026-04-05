@@ -7,6 +7,7 @@ summary and wine results.
 */
 
 const API_BASE_URL = "http://127.0.0.1:8000";
+const FILTERS_ENDPOINT = `${API_BASE_URL}/filters`;
 const QUERY_ENDPOINT = `${API_BASE_URL}/query`;
 
 const DEFAULT_PAGE_SIZE = 12;
@@ -38,11 +39,22 @@ const pageIndicator = document.getElementById("page-indicator");
 
 const exampleChips = document.querySelectorAll(".example-chip");
 
+const filterSection = document.getElementById("filter-section");
+const filterForm = document.getElementById("filter-form");
+const filterGrid = document.getElementById("filter-grid");
+const filterStatus = document.getElementById("filter-status");
+const filterQueryPreview = document.getElementById("filter-query-preview");
+const applyFiltersButton = document.getElementById("apply-filters-button");
+const clearFiltersButton = document.getElementById("clear-filters-button");
+const toggleFiltersButton = document.getElementById("toggle-filters-button");
+
 const appState = {
   currentQuestion: "",
   currentPage: 1,
   currentPageSize: DEFAULT_PAGE_SIZE,
-  isLoading: false
+  isLoading: false,
+  filterMetadata: null,
+  filtersVisible: false
 };
 
 
@@ -86,6 +98,314 @@ function safeText(value, fallback = "Not available") {
     return fallback;
   }
   return String(value);
+}
+
+
+function formatFilterNumber(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return "";
+  }
+
+  return Number.isInteger(parsed) ? String(parsed) : String(parsed);
+}
+
+
+function getFilterControlValue(field, bound = null) {
+  const selector = bound
+    ? `[data-filter-field="${field}"][data-filter-bound="${bound}"]`
+    : `[data-filter-field="${field}"]`;
+  const element = filterGrid.querySelector(selector);
+  return normalizeQuestionText(element?.value || "");
+}
+
+
+function setFilterControlValue(field, value, bound = null) {
+  const selector = bound
+    ? `[data-filter-field="${field}"][data-filter-bound="${bound}"]`
+    : `[data-filter-field="${field}"]`;
+  const element = filterGrid.querySelector(selector);
+  if (!element) {
+    return;
+  }
+
+  element.value = value;
+}
+
+
+function getSelectedFilters() {
+  return {
+    color: getFilterControlValue("color"),
+    country: getFilterControlValue("country"),
+    region: getFilterControlValue("region"),
+    producer: getFilterControlValue("producer"),
+    varietal: getFilterControlValue("varietal"),
+    min_price: getFilterControlValue("price", "min"),
+    max_price: getFilterControlValue("price", "max"),
+    min_abv: getFilterControlValue("abv", "min"),
+    max_abv: getFilterControlValue("abv", "max"),
+    min_vintage: getFilterControlValue("vintage", "min"),
+    max_vintage: getFilterControlValue("vintage", "max")
+  };
+}
+
+
+function buildQuestionFromFilters() {
+  const selections = getSelectedFilters();
+  const segments = [];
+
+  if (selections.color) {
+    segments.push(`show me ${selections.color} wines`);
+  } else {
+    segments.push("show me wines");
+  }
+
+  if (selections.region) {
+    segments.push(`from ${selections.region}`);
+  } else if (selections.country) {
+    segments.push(`from ${selections.country}`);
+  }
+
+  if (selections.producer) {
+    segments.push(`producer ${selections.producer}`);
+  }
+
+  if (selections.varietal) {
+    segments.push(`varietal ${selections.varietal}`);
+  }
+
+  if (selections.min_price && selections.max_price) {
+    segments.push(`between $${selections.min_price} and $${selections.max_price}`);
+  } else if (selections.max_price) {
+    segments.push(`under $${selections.max_price}`);
+  } else if (selections.min_price) {
+    segments.push(`over $${selections.min_price}`);
+  }
+
+  if (selections.min_abv && selections.max_abv) {
+    segments.push(`abv between ${selections.min_abv}% and ${selections.max_abv}%`);
+  } else if (selections.min_abv) {
+    segments.push(`abv above ${selections.min_abv}%`);
+  } else if (selections.max_abv) {
+    segments.push(`abv under ${selections.max_abv}%`);
+  }
+
+  if (selections.min_vintage && selections.max_vintage) {
+    segments.push(`between ${selections.min_vintage} and ${selections.max_vintage}`);
+  } else if (selections.min_vintage) {
+    segments.push(`after ${selections.min_vintage}`);
+  } else if (selections.max_vintage) {
+    segments.push(`before ${selections.max_vintage}`);
+  }
+
+  return normalizeQuestionText(segments.join(" "));
+}
+
+
+function updateFilterPreview() {
+  const preview = buildQuestionFromFilters();
+  filterQueryPreview.textContent = `Query preview: ${preview}`;
+}
+
+
+function setFilterVisibility(isVisible) {
+  appState.filtersVisible = Boolean(isVisible);
+  filterSection.classList.toggle("hidden", !appState.filtersVisible);
+  toggleFiltersButton.textContent = appState.filtersVisible ? "Hide filters" : "Show filters";
+}
+
+
+function createFilterCardHeader(label, countText = "") {
+  const header = document.createElement("div");
+  header.className = "filter-card-header";
+
+  const title = document.createElement("h3");
+  title.className = "filter-card-title";
+  title.textContent = label;
+  header.appendChild(title);
+
+  if (countText) {
+    const count = document.createElement("span");
+    count.className = "filter-card-count";
+    count.textContent = countText;
+    header.appendChild(count);
+  }
+
+  return header;
+}
+
+
+function createTextFilterCard(filter) {
+  const card = document.createElement("article");
+  card.className = "filter-card";
+  card.appendChild(
+    createFilterCardHeader(
+      filter.label,
+      filter.available_count ? `${filter.available_count} values` : ""
+    )
+  );
+
+  const controlId = `filter-${filter.field}`;
+  let control = null;
+
+  if (filter.input_type === "select") {
+    control = document.createElement("select");
+    control.className = "filter-control";
+    control.id = controlId;
+    control.dataset.filterField = filter.field;
+
+    const emptyOption = document.createElement("option");
+    emptyOption.value = "";
+    emptyOption.textContent = `Any ${filter.label.toLowerCase()}`;
+    control.appendChild(emptyOption);
+
+    filter.options.forEach((option) => {
+      const optionEl = document.createElement("option");
+      optionEl.value = option.value;
+      optionEl.textContent = option.label;
+      control.appendChild(optionEl);
+    });
+  } else {
+    control = document.createElement("input");
+    control.className = "filter-control";
+    control.id = controlId;
+    control.type = "text";
+    control.placeholder = `Type a ${filter.label.toLowerCase()} value`;
+    control.autocomplete = "off";
+    control.dataset.filterField = filter.field;
+
+    const datalist = document.createElement("datalist");
+    datalist.id = `${controlId}-list`;
+    control.setAttribute("list", datalist.id);
+
+    filter.options.forEach((option) => {
+      const optionEl = document.createElement("option");
+      optionEl.value = option.value;
+      datalist.appendChild(optionEl);
+    });
+
+    card.appendChild(control);
+    card.appendChild(datalist);
+    control = null;
+  }
+
+  if (control) {
+    card.appendChild(control);
+  }
+
+  const chipRow = document.createElement("div");
+  chipRow.className = "filter-chip-row";
+
+  filter.options.slice(0, 6).forEach((option) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "filter-chip";
+    chip.textContent = option.count ? `${option.label} (${option.count})` : option.label;
+    chip.addEventListener("click", () => {
+      setFilterControlValue(filter.field, option.value);
+      updateFilterPreview();
+    });
+    chipRow.appendChild(chip);
+  });
+
+  if (chipRow.childElementCount > 0) {
+    card.appendChild(chipRow);
+  }
+
+  if (filter.hint) {
+    const hint = document.createElement("p");
+    hint.className = "filter-hint";
+    hint.textContent = filter.hint;
+    card.appendChild(hint);
+  }
+
+  return card;
+}
+
+
+function createNumericFilterCard(filter) {
+  const card = document.createElement("article");
+  card.className = "filter-card";
+  card.appendChild(
+    createFilterCardHeader(
+      filter.label,
+      `${formatFilterNumber(filter.min_value)} to ${formatFilterNumber(filter.max_value)}${filter.unit ? ` ${filter.unit}` : ""}`
+    )
+  );
+
+  const rangeGrid = document.createElement("div");
+  rangeGrid.className = "filter-range-grid";
+
+  [
+    { bound: "min", label: "Min" },
+    { bound: "max", label: "Max" }
+  ].forEach((config) => {
+    const wrapper = document.createElement("label");
+
+    const label = document.createElement("span");
+    label.className = "filter-range-label";
+    label.textContent = config.label;
+    wrapper.appendChild(label);
+
+    const input = document.createElement("input");
+    input.type = "number";
+    input.className = "filter-range-input";
+    input.min = String(filter.min_value);
+    input.max = String(filter.max_value);
+    input.step = String(filter.step || 1);
+    input.placeholder = formatFilterNumber(
+      config.bound === "min" ? filter.min_value : filter.max_value
+    );
+    input.dataset.filterField = filter.field;
+    input.dataset.filterBound = config.bound;
+    wrapper.appendChild(input);
+
+    rangeGrid.appendChild(wrapper);
+  });
+
+  card.appendChild(rangeGrid);
+  return card;
+}
+
+
+function renderFilterPanel(metadata) {
+  appState.filterMetadata = metadata;
+  filterGrid.innerHTML = "";
+
+  metadata.text_filters.forEach((filter) => {
+    filterGrid.appendChild(createTextFilterCard(filter));
+  });
+
+  metadata.numeric_filters.forEach((filter) => {
+    filterGrid.appendChild(createNumericFilterCard(filter));
+  });
+
+  filterStatus.textContent = "Filter values are loaded from the current dataset.";
+  updateFilterPreview();
+}
+
+
+async function loadFilterMetadata() {
+  filterStatus.textContent = "Loading dataset filters...";
+  applyFiltersButton.disabled = true;
+  clearFiltersButton.disabled = true;
+
+  try {
+    const response = await fetch(FILTERS_ENDPOINT);
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data?.detail || "Unable to load dataset filters.");
+    }
+
+    renderFilterPanel(data);
+  } catch (error) {
+    filterStatus.textContent = `Could not load dataset filters: ${error.message}`;
+    filterQueryPreview.textContent = "";
+  } finally {
+    applyFiltersButton.disabled = false;
+    clearFiltersButton.disabled = false;
+  }
 }
 
 
@@ -391,11 +711,16 @@ function renderResponse(data) {
 async function submitQuestion(question, page = 1, options = {}) {
   const normalizedQuestion = normalizeQuestionText(question);
   const shouldAutoSpeak = options.autoSpeak !== false;
+  const shouldCollapseFilters = options.collapseFilters !== false;
 
   resetResponseUI();
   setStatus("Searching the collection...", "loading");
   askButton.disabled = true;
   appState.isLoading = true;
+
+  if (shouldCollapseFilters) {
+    setFilterVisibility(false);
+  }
 
   try {
     const response = await fetch(QUERY_ENDPOINT, {
@@ -450,7 +775,10 @@ async function submitCurrentPage(page) {
     return;
   }
 
-  await submitQuestion(appState.currentQuestion, page, { autoSpeak: false });
+  await submitQuestion(appState.currentQuestion, page, {
+    autoSpeak: false,
+    collapseFilters: false
+  });
 }
 
 
@@ -483,6 +811,34 @@ exampleChips.forEach((chip) => {
 });
 
 
+filterForm.addEventListener("input", () => {
+  updateFilterPreview();
+});
+
+filterForm.addEventListener("change", () => {
+  updateFilterPreview();
+});
+
+toggleFiltersButton.addEventListener("click", () => {
+  setFilterVisibility(!appState.filtersVisible);
+});
+
+applyFiltersButton.addEventListener("click", async () => {
+  const nextQuestion = buildQuestionFromFilters();
+  questionInput.value = nextQuestion;
+
+  appState.currentQuestion = nextQuestion;
+  appState.currentPage = 1;
+
+  await submitQuestion(nextQuestion, 1);
+});
+
+clearFiltersButton.addEventListener("click", () => {
+  filterForm.reset();
+  updateFilterPreview();
+});
+
+
 prevPageButton.addEventListener("click", async () => {
   const previousPage = Math.max(appState.currentPage - 1, 1);
   await submitCurrentPage(previousPage);
@@ -498,6 +854,10 @@ window.wineAssistantUI = {
   submitQuestion,
   setStatus,
   clearStatus,
+  buildQuestionFromFilters,
   questionInput,
   lastResponse: null
 };
+
+loadFilterMetadata();
+setFilterVisibility(false);

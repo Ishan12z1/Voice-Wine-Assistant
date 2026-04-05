@@ -65,6 +65,20 @@ FIELD_MATCH_CONFIG: dict[str, dict[str, float | bool]] = {
     "color": {"score_cutoff": 100, "allow_fuzzy": False},
 }
 
+FILTER_TEXT_FIELD_CONFIG: list[dict[str, str | int]] = [
+    {"field": "color", "label": "Color", "input_type": "select", "limit": 8},
+    {"field": "country", "label": "Country", "input_type": "datalist", "limit": 12},
+    {"field": "region", "label": "Region", "input_type": "datalist", "limit": 12},
+    {"field": "producer", "label": "Producer", "input_type": "datalist", "limit": 12},
+    {"field": "varietal", "label": "Varietal", "input_type": "datalist", "limit": 12},
+]
+
+FILTER_NUMERIC_FIELD_CONFIG: list[dict[str, str | float]] = [
+    {"field": "price", "label": "Price", "step": 1.0, "unit": "USD"},
+    {"field": "abv", "label": "ABV", "step": 0.5, "unit": "%"},
+    {"field": "vintage", "label": "Vintage", "step": 1.0, "unit": None},
+]
+
 
 def _resolve_dataset_path(dataset_path: str | None = None) -> str:
     """
@@ -405,3 +419,74 @@ def resolve_field_value(
         return match[0], match[1], []
 
     return None, None, get_closest_field_values(field_name, user_text, limit=3, dataset_path=dataset_path)
+
+
+def get_filter_panel_metadata(dataset_path: str | None = None) -> dict[str, object]:
+    """
+    Build a compact metadata payload for the dynamic frontend filter panel.
+    """
+    metadata = get_dataset_metadata(dataset_path)
+
+    text_filters: list[dict[str, object]] = []
+    for config in FILTER_TEXT_FIELD_CONFIG:
+        field_name = str(config["field"])
+        field_meta = metadata.field_indexes.get(field_name)
+        if field_meta is None or field_meta.canonical_column is None or not field_meta.values:
+            continue
+
+        option_limit = int(config["limit"])
+        options = [
+            {
+                "value": value,
+                "label": value,
+                "count": field_meta.counts.get(value, 0),
+            }
+            for value in field_meta.top_values[:option_limit]
+        ]
+
+        visible_count = min(option_limit, len(field_meta.values))
+        hint = (
+            f"Showing top {visible_count} of {len(field_meta.values)} dataset values."
+            if len(field_meta.values) > visible_count
+            else f"{len(field_meta.values)} dataset values available."
+        )
+
+        text_filters.append(
+            {
+                "field": field_name,
+                "label": str(config["label"]),
+                "input_type": str(config["input_type"]),
+                "available_count": len(field_meta.values),
+                "hint": hint,
+                "options": options,
+            }
+        )
+
+    numeric_filters: list[dict[str, object]] = []
+    for config in FILTER_NUMERIC_FIELD_CONFIG:
+        field_name = str(config["field"])
+        range_meta = metadata.numeric_ranges.get(field_name)
+        if (
+            range_meta is None
+            or range_meta.canonical_column is None
+            or range_meta.min_value is None
+            or range_meta.max_value is None
+        ):
+            continue
+
+        numeric_filters.append(
+            {
+                "field": field_name,
+                "label": str(config["label"]),
+                "min_value": range_meta.min_value,
+                "max_value": range_meta.max_value,
+                "step": float(config["step"]),
+                "unit": config["unit"],
+            }
+        )
+
+    return {
+        "dataset_path": metadata.dataset_path,
+        "text_filters": text_filters,
+        "numeric_filters": numeric_filters,
+    }

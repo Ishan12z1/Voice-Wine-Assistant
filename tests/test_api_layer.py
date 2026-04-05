@@ -11,6 +11,38 @@ def test_health_endpoint_reports_loaded_dataset(api_client) -> None:
     assert payload["columns_loaded"] > 0
 
 
+def test_filters_endpoint_returns_grounded_filter_metadata(api_client) -> None:
+    response = api_client.get("/filters")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["dataset_path"]
+    assert isinstance(payload["text_filters"], list)
+    assert isinstance(payload["numeric_filters"], list)
+
+    color_filter = next(filter_item for filter_item in payload["text_filters"] if filter_item["field"] == "color")
+    color_values = [option["value"] for option in color_filter["options"]]
+    assert "white" in color_values
+    assert color_filter["input_type"] == "select"
+
+    price_filter = next(filter_item for filter_item in payload["numeric_filters"] if filter_item["field"] == "price")
+    assert price_filter["min_value"] is not None
+    assert price_filter["max_value"] is not None
+    assert price_filter["min_value"] <= price_filter["max_value"]
+
+
+def test_filters_endpoint_uses_compact_top_values_for_large_text_fields(api_client) -> None:
+    response = api_client.get("/filters")
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    producer_filter = next(filter_item for filter_item in payload["text_filters"] if filter_item["field"] == "producer")
+    assert producer_filter["available_count"] >= len(producer_filter["options"])
+    assert len(producer_filter["options"]) <= 12
+    assert producer_filter["hint"]
+
+
 def test_query_endpoint_returns_results_payload(api_client) -> None:
     response = api_client.post(
         "/query",

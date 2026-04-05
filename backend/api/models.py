@@ -59,6 +59,48 @@ class WineQueryResponse(BaseModel):
     followup_suggestions: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class DatasetFilterOption(BaseModel):
+    """
+    One grounded selectable value for a dataset-backed filter.
+    """
+    value: str
+    label: str
+    count: int | None = None
+
+
+class DatasetTextFilter(BaseModel):
+    """
+    Metadata for one text/categorical filter shown in the frontend.
+    """
+    field: str
+    label: str
+    input_type: str
+    available_count: int = 0
+    hint: str | None = None
+    options: list[DatasetFilterOption] = Field(default_factory=list)
+
+
+class DatasetNumericFilter(BaseModel):
+    """
+    Metadata for one numeric/range filter shown in the frontend.
+    """
+    field: str
+    label: str
+    min_value: float | int | None = None
+    max_value: float | int | None = None
+    step: float = 1.0
+    unit: str | None = None
+
+
+class FilterMetadataResponse(BaseModel):
+    """
+    Response body for the dynamic frontend filter panel.
+    """
+    dataset_path: str
+    text_filters: list[DatasetTextFilter] = Field(default_factory=list)
+    numeric_filters: list[DatasetNumericFilter] = Field(default_factory=list)
+
+
 class HealthResponse(BaseModel):
     """
     Response body for the health endpoint.

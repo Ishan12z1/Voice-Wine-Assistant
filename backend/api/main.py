@@ -11,8 +11,14 @@ import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api.models import HealthResponse, WineQueryRequest, WineQueryResponse
+from backend.api.models import (
+    FilterMetadataResponse,
+    HealthResponse,
+    WineQueryRequest,
+    WineQueryResponse,
+)
 from backend.core.data_loader import DEFAULT_DATASET_PATH, load_wine_dataset
+from backend.core.dataset_metadata import get_filter_panel_metadata
 from backend.services.pipeline import run_query_pipeline
 
 app = FastAPI(
@@ -39,6 +45,7 @@ def root() -> dict[str, str]:
         "message": "Voice Wine Assistant API is running.",
         "docs": "/docs",
         "health": "/health",
+        "filters_endpoint": "/filters",
         "query_endpoint": "/query",
     }
 
@@ -57,6 +64,16 @@ def health_check() -> HealthResponse:
         columns_loaded=len(df.columns),
         dataset_path=dataset_path,
     )
+
+
+@app.get("/filters", response_model=FilterMetadataResponse, tags=["meta"])
+def get_filters() -> FilterMetadataResponse:
+    """
+    Metadata-backed filter options for the frontend.
+    """
+    dataset_path = os.getenv("WINE_DATASET_PATH", DEFAULT_DATASET_PATH)
+    filter_payload = get_filter_panel_metadata(dataset_path)
+    return FilterMetadataResponse.model_validate(filter_payload)
 
 
 @app.post("/query", response_model=WineQueryResponse, tags=["query"])
