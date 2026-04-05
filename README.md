@@ -51,7 +51,7 @@ The project is designed to stay honest to the underlying dataset. It does not in
 ## API
 
 ### `GET /`
-Quick check that the API is running.
+Serves the frontend app from the backend.
 
 ### `GET /health`
 Confirms the backend can load the dataset and returns row and column counts.
@@ -157,6 +157,8 @@ By default, the backend loads the processed dataset. You can override the runtim
 
 The backend now loads `.env` automatically from the repo root, and the active runtime dataset comes from `WINE_DATASET_PATH` there. The metadata layer is built from that same active processed dataset, so grounding, filter options, and suggestions stay aligned with the data the backend is actually using.
 
+In Docker, the same `WINE_DATASET_PATH` value is passed into the container and resolves relative to `/app`, so `data/processed/wines_enriched.csv` continues to work there too.
+
 ### Refreshing The Dataset
 
 If you update the raw CSV and want to rebuild the processed files in one step, run:
@@ -190,6 +192,33 @@ If you want the app to switch to a custom enriched dataset and persist that chan
 ```
 
 If you write the enriched dataset to a non-default location without `-UpdateEnv`, the script prints the exact `WINE_DATASET_PATH="..."` line to place in `.env`.
+
+## Docker
+
+The backend now serves the frontend directly, so the containerized app only needs one service.
+
+Build and run it with:
+
+```powershell
+docker compose up --build
+```
+
+Then open:
+
+- `http://127.0.0.1:8000`
+
+Useful routes:
+
+- app UI: `/`
+- API docs: `/docs`
+- health: `/health`
+
+Container notes:
+
+- `.env` is loaded automatically inside the container
+- `WINE_DATASET_PATH` controls which enriched CSV is active
+- the frontend is served from FastAPI at `/`
+- no separate frontend container or manual frontend server is required for the showcase path
 
 ## Project Structure
 
@@ -227,6 +256,9 @@ smoketest/
 tests/
 requirements.txt
 README.md
+run_dev.py
+Dockerfile
+docker-compose.yml
 ```
 
 ## Setup
@@ -257,7 +289,9 @@ Backend URLs:
 - `http://127.0.0.1:8000`
 - Swagger docs: `http://127.0.0.1:8000/docs`
 
-### 4. Start the frontend
+The backend now serves the frontend too, so you can open `http://127.0.0.1:8000` directly.
+
+### 4. Start the frontend separately (optional)
 
 In a second terminal:
 
@@ -269,7 +303,22 @@ Then open:
 
 - `http://127.0.0.1:5500`
 
-The frontend is configured to talk to the backend at `http://127.0.0.1:8000`.
+The standalone frontend is configured to talk to the backend at `http://127.0.0.1:8000`.
+
+### One-Command Local Startup
+
+To launch both the backend and the standalone frontend dev server together, run:
+
+```powershell
+.\.venv\Scripts\python.exe .\run_dev.py
+```
+
+This starts:
+
+- backend at `http://127.0.0.1:8000`
+- frontend at `http://127.0.0.1:5500`
+
+Press `Ctrl+C` once to stop both processes cleanly.
 
 ## Example Queries
 
