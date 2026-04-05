@@ -1,13 +1,20 @@
 from __future__ import annotations
 
-from backend.core.schemas import QueryFilters, QueryIntent, SortBy, StructuredWineQuery
+from backend.core.schemas import (
+    QueryFilters,
+    QueryIntent,
+    SortBy,
+    StructuredWineQuery,
+    UnresolvedEntity,
+    UnresolvedReason,
+)
 from backend.services.parser.builders import (
     make_ambiguous_query,
     make_query,
     make_unsupported_query,
 )
 from backend.services.parser.extractors import (
-    detect_color,
+    detect_dataset_capability_gaps,
     detect_occasion,
     detect_sort_preference,
     detect_unsupported_reason,
@@ -75,8 +82,20 @@ def parse_query(text: str) -> StructuredWineQuery:
             unresolved_entities=[],
         )
 
+    dataset_gap_entities = [
+        UnresolvedEntity(
+            field=field_name,
+            value=label,
+            phrase=label,
+            reason=UnresolvedReason.FIELD_MISSING_FROM_DATASET,
+            dataset_has_field=False,
+            closest_matches=[],
+        )
+        for field_name, label in detect_dataset_capability_gaps(cleaned)
+    ]
+
     unsupported_reason = detect_unsupported_reason(cleaned)
-    if unsupported_reason:
+    if unsupported_reason and not dataset_gap_entities:
         return make_unsupported_query(
             question=cleaned,
             reason=unsupported_reason,
@@ -110,18 +129,13 @@ def parse_query(text: str) -> StructuredWineQuery:
     if volume_conf is not None:
         confidence_parts.append(volume_conf)
 
-    # Color and occasion
-    color, color_conf = detect_color(cleaned)
-    filters.color = color
-    if color_conf is not None:
-        confidence_parts.append(color_conf)
-
     occasion, occasion_conf = detect_occasion(cleaned)
     if occasion_conf is not None:
         confidence_parts.append(occasion_conf)
 
     # Dataset-backed entity matching + unresolved entity detection
     filters, match_scores, unresolved_entities = apply_dataset_matches(cleaned, filters)
+    unresolved_entities = dataset_gap_entities + unresolved_entities
     confidence_parts.extend(match_scores)
 
     # Require varietal data when the prompt explicitly depends on grape/varietal.

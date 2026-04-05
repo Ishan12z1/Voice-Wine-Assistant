@@ -34,6 +34,36 @@ BROWSE_KEYWORDS = [
     "give me",
 ]
 
+DATASET_CAPABILITY_PATTERNS: dict[str, dict[str, list[str] | str]] = {
+    "sweetness": {
+        "label": "sweetness",
+        "phrases": ["sweetness", "dry", "off dry", "semi sweet", "sweet wine"],
+    },
+    "food_pairing": {
+        "label": "food pairing",
+        "phrases": ["food pairing", "pair with", "pairs with", "pairing"],
+    },
+    "tasting_notes": {
+        "label": "tasting notes",
+        "phrases": ["tasting note", "tasting notes", "flavor profile", "aroma", "aromas"],
+    },
+}
+
+
+def detect_dataset_capability_gaps(question: str) -> list[tuple[str, str]]:
+    """
+    Detect user requests for fields that the current dataset does not provide.
+    """
+    normalized_question = normalize_text(question)
+    gaps: list[tuple[str, str]] = []
+
+    for field_name, config in DATASET_CAPABILITY_PATTERNS.items():
+        phrases = [normalize_text(phrase) for phrase in config["phrases"]]
+        if has_any_phrase(normalized_question, phrases):
+            gaps.append((field_name, str(config["label"])))
+
+    return gaps
+
 
 def detect_unsupported_reason(question: str) -> str | None:
     """

@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import re
 
-from backend.core.dataset_metadata import get_dataset_metadata
-from backend.core.schemas import QueryFilters, UnresolvedEntity
-from backend.utils.helpers import best_value_match, exact_phrase_match, normalize_text
+from backend.core.dataset_metadata import (
+    get_top_field_values,
+    resolve_field_value,
+)
+from backend.core.schemas import QueryFilters, UnresolvedEntity, UnresolvedReason, WineColor
+from backend.utils.helpers import normalize_text
 
 
-# Words that usually mark the end of a location phrase in the query.
 _LOCATION_BOUNDARY_WORDS = [
     "under",
     "below",
@@ -28,8 +30,7 @@ _LOCATION_BOUNDARY_WORDS = [
     "for",
 ]
 
-# Generic phrases that should never become unresolved entities.
-_LOCATION_IGNORE_VALUES = {
+_PHRASE_IGNORE_VALUES = {
     "wine",
     "wines",
     "the collection",
@@ -38,18 +39,30 @@ _LOCATION_IGNORE_VALUES = {
     "inventory",
 }
 
+_PRODUCER_HINT_WORDS = [
+    "cellars",
+    "cellar",
+    "vineyards",
+    "vineyard",
+    "winery",
+    "estate",
+    "chateau",
+    "domaine",
+    "domaines",
+]
+
+
+def _clean_phrase(value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    cleaned = " ".join(value.strip().split())
+    return cleaned or None
+
 
 def _extract_explicit_location_phrase(question: str) -> str | None:
     """
-    Extract a simple explicit phrase following "from" or "in".
-
-    Examples:
-    - "best red wine in India" -> "India"
-    - "show me wines from France under $20" -> "France"
-    - "Find wines from Stag's Leap Wine Cellars under $100" -> "Stag's Leap Wine Cellars"
-
-    Phase 2 keeps this intentionally narrow and only handles obvious
-    location-style phrases first.
+    Extract a simple phrase following "from" or "in".
     """
     escaped_boundaries = "|".join(re.escape(word) for word in _LOCATION_BOUNDARY_WORDS)
 
@@ -63,19 +76,35 @@ def _extract_explicit_location_phrase(question: str) -> str | None:
     if not match:
         return None
 
-    candidate = " ".join(match.group(1).strip().split())
-    return candidate or None
+    return _clean_phrase(match.group(1))
+
+
+def _extract_value_after_keywords(question: str, keywords: list[str]) -> str | None:
+    """
+    Extract a short phrase after a keyword like "called" or "grape".
+    """
+    escaped_keywords = "|".join(re.escape(keyword) for keyword in keywords)
+    escaped_boundaries = "|".join(re.escape(word) for word in _LOCATION_BOUNDARY_WORDS)
+
+    pattern = (
+        rf"\b(?:{escaped_keywords})\s+"
+        rf"([a-zA-Z][a-zA-Z0-9\s'&.\-]{{1,60}}?)"
+        rf"(?=\s+(?:{escaped_boundaries})\b|$)"
+    )
+
+    match = re.search(pattern, question, flags=re.IGNORECASE)
+    if not match:
+        return None
+
+    return _clean_phrase(match.group(1))
+
+
+def _looks_like_producer_phrase(candidate: str) -> bool:
+    normalized = normalize_text(candidate)
+    return any(hint in normalized for hint in _PRODUCER_HINT_WORDS)
 
 
 def _candidate_matches_existing_filters(candidate: str, filters: QueryFilters) -> bool:
-    """
-    Return True if the candidate already matched some known filter.
-
-    This prevents false unresolved hits for prompts like:
-    - "Find wines from Stag's Leap Wine Cellars under 100"
-
-    where "from X" is really a producer phrase, not a country/region.
-    """
     normalized_candidate = normalize_text(candidate)
 
     for value in [
@@ -85,6 +114,7 @@ def _candidate_matches_existing_filters(candidate: str, filters: QueryFilters) -
         filters.producer,
         filters.varietal,
         filters.name,
+        filters.color,
     ]:
         if value and normalize_text(str(value)) == normalized_candidate:
             return True
@@ -92,69 +122,85 @@ def _candidate_matches_existing_filters(candidate: str, filters: QueryFilters) -
     return False
 
 
-def _build_unresolved_location_entity(candidate: str) -> UnresolvedEntity | None:
-    """
-    Turn an unmatched explicit location phrase into an unresolved entity.
-    """
-    cleaned_value = " ".join(candidate.strip().split())
+def _append_unresolved_entity(
+    unresolved_entities: list[UnresolvedEntity],
+    entity: UnresolvedEntity | None,
+) -> None:
+    if entity is None:
+        return
+
+    normalized_value = normalize_text(entity.value)
+    for existing in unresolved_entities:
+        if existing.field == entity.field and normalize_text(existing.value) == normalized_value:
+            return
+
+    unresolved_entities.append(entity)
+
+
+def _build_unresolved_entity(
+    field: str,
+    value: str,
+    *,
+    phrase: str | None = None,
+    reason: UnresolvedReason = UnresolvedReason.NOT_IN_DATASET,
+    dataset_has_field: bool = True,
+    closest_matches: list[str] | None = None,
+) -> UnresolvedEntity | None:
+    cleaned_value = _clean_phrase(value)
+    if cleaned_value is None:
+        return None
+
     normalized_value = normalize_text(cleaned_value)
-
-    if not cleaned_value:
-        return None
-
-    if normalized_value in _LOCATION_IGNORE_VALUES:
-        return None
-
-    # Ignore very short fragments that are likely just noise.
-    if len(normalized_value) < 3:
+    if normalized_value in _PHRASE_IGNORE_VALUES or len(normalized_value) < 3:
         return None
 
     return UnresolvedEntity(
-        field="country_or_region",
+        field=field,
         value=cleaned_value,
-        phrase=cleaned_value,
+        phrase=_clean_phrase(phrase) or cleaned_value,
+        reason=reason,
+        dataset_has_field=dataset_has_field,
+        closest_matches=closest_matches or [],
     )
 
 
-def _resolve_explicit_location_phrase(
-    location_phrase: str,
-    country_values: list[str],
-    region_values: list[str],
-    appellation_values: list[str],
-) -> tuple[str | None, str | None, str | None, float | None]:
+def _resolve_geography_phrase(location_phrase: str) -> tuple[str | None, str | None, str | None, float | None]:
     """
-    Resolve one explicit location phrase with strict precedence:
-    country -> region -> appellation.
-
-    Important:
-    - Prefer exact phrase matches first.
-    - Allow fuzzy matching as a fallback, but only for the single extracted
-      location phrase, not the whole question.
-    - Stop after the first successful geography match so one phrase does not
-      populate multiple geography fields.
+    Resolve one explicit phrase with strict geography precedence.
     """
-    # Country first
-    country_match = exact_phrase_match(location_phrase, country_values)
-    if country_match is None:
-        country_match = best_value_match(location_phrase, country_values, score_cutoff=93, allow_fuzzy=True)
+    country_match, country_score, _ = resolve_field_value("country", location_phrase)
     if country_match:
-        return country_match[0], None, None, country_match[1] / 100
+        return country_match, None, None, (country_score or 100.0) / 100
 
-    # Region second
-    region_match = exact_phrase_match(location_phrase, region_values)
-    if region_match is None:
-        region_match = best_value_match(location_phrase, region_values, score_cutoff=93, allow_fuzzy=True)
+    region_match, region_score, _ = resolve_field_value("region", location_phrase)
     if region_match:
-        return None, region_match[0], None, region_match[1] / 100
+        return None, region_match, None, (region_score or 100.0) / 100
 
-    # Appellation third
-    appellation_match = exact_phrase_match(location_phrase, appellation_values)
-    if appellation_match is None:
-        appellation_match = best_value_match(location_phrase, appellation_values, score_cutoff=93, allow_fuzzy=True)
+    appellation_match, appellation_score, _ = resolve_field_value("appellation", location_phrase)
     if appellation_match:
-        return None, None, appellation_match[0], appellation_match[1] / 100
+        return None, None, appellation_match, (appellation_score or 100.0) / 100
 
     return None, None, None, None
+
+
+def _apply_field_match(
+    question: str,
+    field_name: str,
+) -> tuple[str | None, float | None, list[str]]:
+    matched_value, match_score, suggestions = resolve_field_value(field_name, question)
+    if matched_value is None:
+        return None, None, suggestions
+    return matched_value, (match_score or 100.0) / 100, []
+
+
+def _coerce_color(value: str | None) -> WineColor | None:
+    if value is None:
+        return None
+
+    try:
+        return WineColor(value)
+    except ValueError:
+        return None
 
 
 def apply_dataset_matches(
@@ -162,121 +208,138 @@ def apply_dataset_matches(
     filters: QueryFilters,
 ) -> tuple[QueryFilters, list[float], list[UnresolvedEntity]]:
     """
-    Fill country / region / appellation / producer / varietal / name
-    from dataset metadata.
-
-    Phase 2 behavior:
-    - explicit location phrases like "from France" or "in India" are handled
-      separately and more strictly than general fuzzy matching
-    - unresolved explicit location phrases are preserved instead of silently
-      disappearing
-    - producer phrases like "from Stag's Leap Wine Cellars" are allowed to
-      match producer first, so they are not incorrectly treated as geography
+    Ground supported text fields against dataset metadata.
     """
-    metadata = get_dataset_metadata()
     scores: list[float] = []
     unresolved_entities: list[UnresolvedEntity] = []
-
     normalized_question = normalize_text(question)
 
-    country_values = metadata.field_indexes["country"].values
-    region_values = metadata.field_indexes["region"].values
-    appellation_values = metadata.field_indexes["appellation"].values
-    producer_values = metadata.field_indexes["producer"].values
-    varietal_values = metadata.field_indexes["varietal"].values
-    name_values = metadata.field_indexes["name"].values
-
-    # ---------------------------------------------------------------------
-    # 1. Extract the explicit phrase after "from" or "in" once.
-    # ---------------------------------------------------------------------
     explicit_location = _extract_explicit_location_phrase(question)
 
-    # ---------------------------------------------------------------------
-    # 2. Geography: if an explicit location phrase exists, resolve it first
-    #    as country -> region -> appellation.
-    # ---------------------------------------------------------------------
     if explicit_location:
-        matched_country, matched_region, matched_appellation, match_score = _resolve_explicit_location_phrase(
-            explicit_location,
-            country_values,
-            region_values,
-            appellation_values,
+        matched_country, matched_region, matched_appellation, match_score = _resolve_geography_phrase(
+            explicit_location
         )
 
         if matched_country:
             filters.country = matched_country
             scores.append(match_score or 1.0)
-
         elif matched_region:
             filters.region = matched_region
             scores.append(match_score or 1.0)
-
         elif matched_appellation:
             filters.appellation = matched_appellation
             scores.append(match_score or 1.0)
+        else:
+            producer_match, producer_score, producer_suggestions = _apply_field_match(explicit_location, "producer")
+            if producer_match:
+                filters.producer = producer_match
+                scores.append(producer_score or 1.0)
+            else:
+                unresolved_field = "producer" if _looks_like_producer_phrase(explicit_location) else "country_or_region"
+                suggestions = (
+                    producer_suggestions
+                    if unresolved_field == "producer"
+                    else get_top_field_values("country", limit=3)
+                )
+                _append_unresolved_entity(
+                    unresolved_entities,
+                    _build_unresolved_entity(
+                        unresolved_field,
+                        explicit_location,
+                        phrase=explicit_location,
+                        closest_matches=suggestions,
+                    ),
+                )
 
-    # ---------------------------------------------------------------------
-    # 3. Non-geographic matching across the full question.
-    #    This must happen before unresolved-entity fallback so producer phrases
-    #    like "from Stag's Leap Wine Cellars" get claimed properly.
-    # ---------------------------------------------------------------------
+    if filters.color is None:
+        color_match, color_score, _ = _apply_field_match(question, "color")
+        color = _coerce_color(color_match)
+        if color is not None:
+            filters.color = color
+            scores.append(color_score or 1.0)
 
-    # Producer matching
-    producer_match = best_value_match(question, producer_values, score_cutoff=93, allow_fuzzy=True)
-    if producer_match:
-        filters.producer = producer_match[0]
-        scores.append(producer_match[1] / 100)
+    if filters.producer is None:
+        producer_match, producer_score, _ = _apply_field_match(question, "producer")
+        if producer_match:
+            filters.producer = producer_match
+            scores.append(producer_score or 1.0)
 
-    # Varietal matching
-    varietal_match = best_value_match(question, varietal_values, score_cutoff=92, allow_fuzzy=True)
-    if varietal_match:
-        filters.varietal = varietal_match[0]
-        scores.append(varietal_match[1] / 100)
+    if filters.varietal is None:
+        varietal_match, varietal_score, _ = _apply_field_match(question, "varietal")
+        if varietal_match:
+            filters.varietal = varietal_match
+            scores.append(varietal_score or 1.0)
 
-    # Wine name matching stays stricter because it is noisy.
-    if re.search(r"\b(named|called)\b", normalized_question):
-        name_match = best_value_match(question, name_values, score_cutoff=96, allow_fuzzy=False)
-        if name_match:
-            filters.name = name_match[0]
-            scores.append(name_match[1] / 100)
-
-    # ---------------------------------------------------------------------
-    # 4. If the explicit phrase did not resolve as geography and it was not
-    #    matched as producer/name/varietal, treat it as unresolved.
-    # ---------------------------------------------------------------------
-    if explicit_location:
-        matched_geography = any([filters.country, filters.region, filters.appellation])
-        already_matched_elsewhere = _candidate_matches_existing_filters(explicit_location, filters)
-
-        if not matched_geography and not already_matched_elsewhere:
-            unresolved_entity = _build_unresolved_location_entity(explicit_location)
-            if unresolved_entity is not None:
-                unresolved_entities.append(unresolved_entity)
-
-    # ---------------------------------------------------------------------
-    # 5. Optional fallback geography matching only when there was no explicit
-    #    location phrase. This keeps broad geography matching available without
-    #    letting "France" also become "Southwest France".
-    # ---------------------------------------------------------------------
-    if not explicit_location and not filters.country:
-        country_match = best_value_match(question, country_values, score_cutoff=93, allow_fuzzy=True)
+    if not explicit_location and filters.country is None:
+        country_match, country_score, _ = _apply_field_match(question, "country")
         if country_match:
-            filters.country = country_match[0]
-            scores.append(country_match[1] / 100)
+            filters.country = country_match
+            scores.append(country_score or 1.0)
 
-    if not explicit_location and not filters.region and not filters.country:
-        region_match = best_value_match(question, region_values, score_cutoff=91, allow_fuzzy=True)
+    if not explicit_location and filters.region is None and filters.country is None:
+        region_match, region_score, _ = _apply_field_match(question, "region")
         if region_match:
-            filters.region = region_match[0]
-            scores.append(region_match[1] / 100)
+            filters.region = region_match
+            scores.append(region_score or 1.0)
 
-    if not explicit_location and not filters.appellation and not filters.region and not filters.country:
-        appellation_match = best_value_match(question, appellation_values, score_cutoff=91, allow_fuzzy=True)
+    if not explicit_location and filters.appellation is None and filters.region is None and filters.country is None:
+        appellation_match, appellation_score, _ = _apply_field_match(question, "appellation")
         if appellation_match:
-            filters.appellation = appellation_match[0]
-            scores.append(appellation_match[1] / 100)
+            filters.appellation = appellation_match
+            scores.append(appellation_score or 1.0)
 
-    # Prevent the same text from being used as both region and appellation.
+    if re.search(r"\b(named|called)\b", normalized_question) and filters.name is None:
+        name_match, name_score, name_suggestions = _apply_field_match(question, "name")
+        if name_match:
+            filters.name = name_match
+            scores.append(name_score or 1.0)
+        else:
+            candidate_name = _extract_value_after_keywords(question, ["named", "called"])
+            _append_unresolved_entity(
+                unresolved_entities,
+                _build_unresolved_entity(
+                    "name",
+                    candidate_name or question,
+                    phrase=candidate_name,
+                    closest_matches=name_suggestions or get_top_field_values("name", limit=3),
+                ),
+            )
+
+    if re.search(r"\b(varietal|grape|grapes)\b", normalized_question) and filters.varietal is None:
+        candidate_varietal = _extract_value_after_keywords(
+            question,
+            ["varietal", "grape", "grapes", "made from", "made with"],
+        )
+        if candidate_varietal and not _candidate_matches_existing_filters(candidate_varietal, filters):
+            _append_unresolved_entity(
+                unresolved_entities,
+                _build_unresolved_entity(
+                    "varietal",
+                    candidate_varietal,
+                    phrase=candidate_varietal,
+                    closest_matches=resolve_field_value("varietal", candidate_varietal)[2]
+                    or get_top_field_values("varietal", limit=3),
+                ),
+            )
+
+    if re.search(r"\b(?:producer|winery|vineyard|estate)\b", normalized_question) and filters.producer is None:
+        candidate_producer = _extract_value_after_keywords(
+            question,
+            ["producer", "winery", "vineyard", "estate"],
+        )
+        if candidate_producer and not _candidate_matches_existing_filters(candidate_producer, filters):
+            _append_unresolved_entity(
+                unresolved_entities,
+                _build_unresolved_entity(
+                    "producer",
+                    candidate_producer,
+                    phrase=candidate_producer,
+                    closest_matches=resolve_field_value("producer", candidate_producer)[2]
+                    or get_top_field_values("producer", limit=3),
+                ),
+            )
+
     if filters.region and filters.appellation:
         if normalize_text(filters.region) == normalize_text(filters.appellation):
             if "appellation" in normalized_question or "ava" in normalized_question:
