@@ -163,6 +163,16 @@ Current behavior:
 
 Voice behavior still depends on browser support for speech APIs.
 
+### Browser Support
+
+Voice input and voice output rely on browser speech APIs.
+
+Recommended browsers for the full voice experience:
+- Google Chrome
+- Microsoft Edge
+
+In browsers with limited speech API support, the typed question workflow still works, but microphone input and spoken output may be unavailable or inconsistent.
+
 ## Dataset
 
 The project uses:
@@ -177,6 +187,17 @@ By default, the backend loads the processed dataset. You can override the runtim
 The backend now loads `.env` automatically from the repo root, and the active runtime dataset comes from `WINE_DATASET_PATH` there. The metadata layer is built from that same active processed dataset, so grounding, filter options, and suggestions stay aligned with the data the backend is actually using.
 
 In Docker, the same `WINE_DATASET_PATH` value is passed into the container and resolves relative to `/app`, so `data/processed/wines_enriched.csv` continues to work there too.
+
+### Assignment Source
+
+This project uses the wine dataset provided in the assignment for Option B — Voice Wine Explorer.
+
+In this repo:
+
+- `data/raw/Assignment wine dataset - Sheet1.csv` is the local copy of the dataset given in the assignment
+- `data/processed/wines_enriched.csv` is the processed runtime dataset derived from that source
+
+The app stays grounded in this dataset pipeline. Query parsing, filtering, ranking, and responses are based only on the active dataset loaded by the backend, and unsupported facts are not invented.
 
 ### Refreshing The Dataset
 
