@@ -1,6 +1,6 @@
-# Vine Info App - Version 1
+# Wine Info App - Version 1
 
-Version 1 of the Vine Info App is a dataset-grounded wine search assistant that lets users explore a wine collection using plain English. It includes a FastAPI backend, a lightweight browser frontend, structured query parsing, deterministic filtering and ranking, and optional browser-based voice input and spoken responses.
+Version 1 of the Wine Info App is a dataset-grounded wine search assistant that lets users explore a wine collection using plain English. It includes a FastAPI backend, a lightweight browser frontend, structured query parsing, deterministic filtering and ranking, and optional browser-based voice input and spoken responses.
 
 ## What Version 1 Includes
 
@@ -212,4 +212,4 @@ Or open the Swagger docs in the browser:
 
 This README documents:
 
-- `Vine Info App - Version 1`
+- `Wine Info App - Version 1`
