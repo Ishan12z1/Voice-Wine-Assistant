@@ -38,9 +38,6 @@ const pageIndicator = document.getElementById("page-indicator");
 
 const exampleChips = document.querySelectorAll(".example-chip");
 
-/**
- * App-level UI state for pagination and repeated queries.
- */
 const appState = {
   currentQuestion: "",
   currentPage: 1,
@@ -49,35 +46,23 @@ const appState = {
 };
 
 
-/**
- * Show a status message above the response area.
- */
 function setStatus(message, type = "info") {
   statusSection.textContent = message;
   statusSection.className = `status-section ${type}`;
 }
 
 
-/**
- * Clear the current status message.
- */
 function clearStatus() {
   statusSection.textContent = "";
   statusSection.className = "status-section";
 }
 
 
-/**
- * Normalize extra whitespace.
- */
 function normalizeQuestionText(text) {
   return String(text || "").replace(/\s+/g, " ").trim();
 }
 
 
-/**
- * Hide all response content before a new request.
- */
 function resetResponseUI() {
   responseSection.classList.add("hidden");
   resultsSection.classList.add("hidden");
@@ -96,9 +81,6 @@ function resetResponseUI() {
 }
 
 
-/**
- * Return a fallback display value for missing fields.
- */
 function safeText(value, fallback = "Not available") {
   if (value === null || value === undefined || value === "") {
     return fallback;
@@ -107,9 +89,6 @@ function safeText(value, fallback = "Not available") {
 }
 
 
-/**
- * Format numeric price values for display.
- */
 function formatPrice(value) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return "Price unavailable";
@@ -122,9 +101,6 @@ function formatPrice(value) {
 }
 
 
-/**
- * Create one wine result card.
- */
 function createWineCard(wine) {
   const card = document.createElement("article");
   card.className = "wine-card";
@@ -199,86 +175,40 @@ function createWineCard(wine) {
 }
 
 
-/**
- * Return suggestion config based on response state.
- *
- * Phase 3 change:
- * - if backend marks needs_refinement=true, still show narrowing chips
- *   even though results are visible on the page.
- */
 function getFollowupConfig(data) {
   const responseType = data?.response_type || "";
-  const missingFields = data?.query?.missing_fields || [];
+  const suggestions = Array.isArray(data?.followup_suggestions)
+    ? data.followup_suggestions
+    : [];
 
-  if (data?.needs_refinement) {
+  if (responseType === "clarification") {
     return {
-      title: "Narrow it down:",
-      suggestions: [
-        { label: "Under $30", value: "under $30", mode: "budget" },
-        { label: "Red wines", value: "red", mode: "color" },
-        { label: "From France", value: "from France", mode: "append" },
-        { label: "Cabernet Sauvignon", value: "Cabernet Sauvignon", mode: "varietal" }
-      ]
-    };
-  }
-
-  if (responseType === "clarification" && missingFields.includes("budget")) {
-    return {
-      title: "Add a budget:",
-      suggestions: [
-        { label: "Under $25", value: "under $25", mode: "budget" },
-        { label: "Under $50", value: "under $50", mode: "budget" },
-        { label: "Between $30 and $60", value: "between $30 and $60", mode: "budget" }
-      ]
-    };
-  }
-
-  if (responseType === "clarification" && missingFields.includes("color")) {
-    return {
-      title: "Choose a style:",
-      suggestions: [
-        { label: "Red", value: "red", mode: "color" },
-        { label: "White", value: "white", mode: "color" },
-        { label: "Sparkling", value: "sparkling", mode: "color" },
-        { label: "Rosé", value: "rosé", mode: "color" }
-      ]
-    };
-  }
-
-  if (responseType === "clarification" && missingFields.includes("varietal")) {
-    return {
-      title: "Pick a grape:",
-      suggestions: [
-        { label: "Chardonnay", value: "Chardonnay", mode: "varietal" },
-        { label: "Pinot Noir", value: "Pinot Noir", mode: "varietal" },
-        { label: "Cabernet Sauvignon", value: "Cabernet Sauvignon", mode: "varietal" },
-        { label: "Sauvignon Blanc", value: "Sauvignon Blanc", mode: "varietal" }
-      ]
+      title: "Add one of these details:",
+      suggestions
     };
   }
 
   if (responseType === "no_results") {
     return {
-      title: "Try a broader search:",
-      suggestions: [
-        { label: "Under $50", value: "under $50", mode: "budget" },
-        { label: "Red wines", value: "red", mode: "color" },
-        { label: "From France", value: "from France", mode: "append" },
-        { label: "Cabernet Sauvignon", value: "Cabernet Sauvignon", mode: "varietal" }
-      ]
+      title: "Try one of these grounded alternatives:",
+      suggestions
+    };
+  }
+
+  if (data?.needs_refinement) {
+    return {
+      title: "Narrow it down:",
+      suggestions
     };
   }
 
   return {
-    title: "",
-    suggestions: []
+    title: "Try one of these next:",
+    suggestions
   };
 }
 
 
-/**
- * Replace an existing budget phrase, or append a new one.
- */
 function applyBudgetSuggestion(question, budgetPhrase) {
   let next = question;
 
@@ -304,14 +234,11 @@ function applyBudgetSuggestion(question, budgetPhrase) {
 }
 
 
-/**
- * Apply a color suggestion in a more natural way.
- */
 function applyColorSuggestion(question, color) {
   let next = question;
 
-  if (/\b(red|white|sparkling|rose|rosé)\s+wines?\b/i.test(next)) {
-    next = next.replace(/\b(red|white|sparkling|rose|rosé)\s+(wine|wines)\b/i, `${color} $2`);
+  if (/\b(red|white|sparkling|rose)\s+wines?\b/i.test(next)) {
+    next = next.replace(/\b(red|white|sparkling|rose)\s+(wine|wines)\b/i, `${color} $2`);
     return normalizeQuestionText(next);
   }
 
@@ -334,9 +261,6 @@ function applyColorSuggestion(question, color) {
 }
 
 
-/**
- * Apply a varietal suggestion in a more natural way.
- */
 function applyVarietalSuggestion(question, varietal) {
   let next = question;
 
@@ -359,12 +283,6 @@ function applyVarietalSuggestion(question, varietal) {
 }
 
 
-/**
- * Build the next question when a follow-up chip is clicked.
- *
- * Phase 3 change:
- * - always reset paging to page 1 when the question changes
- */
 function buildFollowupQuestion(data, suggestion) {
   const currentQuestion = normalizeQuestionText(
     data?.query?.original_question || questionInput.value || ""
@@ -391,9 +309,6 @@ function buildFollowupQuestion(data, suggestion) {
 }
 
 
-/**
- * Render dynamic follow-up chips.
- */
 function renderFollowupSuggestions(data) {
   const config = getFollowupConfig(data);
 
@@ -429,9 +344,6 @@ function renderFollowupSuggestions(data) {
 }
 
 
-/**
- * Render pagination controls.
- */
 function renderPagination(data) {
   const totalPages = Number(data?.total_pages || 0);
   const page = Number(data?.page || 1);
@@ -449,9 +361,6 @@ function renderPagination(data) {
 }
 
 
-/**
- * Render the backend response into the page.
- */
 function renderResponse(data) {
   responseSection.classList.remove("hidden");
 
@@ -479,12 +388,6 @@ function renderResponse(data) {
 }
 
 
-/**
- * Submit a question to the backend.
- *
- * Phase 3 change:
- * - supports page + page_size
- */
 async function submitQuestion(question, page = 1) {
   const normalizedQuestion = normalizeQuestionText(question);
 
@@ -538,9 +441,6 @@ async function submitQuestion(question, page = 1) {
 }
 
 
-/**
- * Load another page for the same current question.
- */
 async function submitCurrentPage(page) {
   if (!appState.currentQuestion) {
     return;
@@ -550,9 +450,6 @@ async function submitCurrentPage(page) {
 }
 
 
-/**
- * Handle typed form submission.
- */
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
 
@@ -569,9 +466,6 @@ form.addEventListener("submit", async (event) => {
 });
 
 
-/**
- * Let example chips quickly populate and submit a question.
- */
 exampleChips.forEach((chip) => {
   chip.addEventListener("click", async () => {
     const question = chip.dataset.question || "";
@@ -585,9 +479,6 @@ exampleChips.forEach((chip) => {
 });
 
 
-/**
- * Pagination button handlers.
- */
 prevPageButton.addEventListener("click", async () => {
   const previousPage = Math.max(appState.currentPage - 1, 1);
   await submitCurrentPage(previousPage);
@@ -599,9 +490,6 @@ nextPageButton.addEventListener("click", async () => {
 });
 
 
-/**
- * Shared UI API used by voice.js and tts.js.
- */
 window.wineAssistantUI = {
   submitQuestion,
   setStatus,
