@@ -4,6 +4,25 @@ Wine Info App is a dataset-grounded wine search assistant built with a FastAPI b
 
 The project is designed to stay honest to the underlying dataset. It does not invent unsupported wine facts, and it surfaces unresolved or unavailable requests explicitly when they do not match the active dataset.
 
+## Quick Start
+
+For local development with one command:
+
+```powershell
+.\.venv\Scripts\python.exe .\run_dev.py
+```
+
+For the containerized demo:
+
+```powershell
+docker compose up --build
+```
+
+Open:
+
+- local app: `http://127.0.0.1:8000`
+- API docs: `http://127.0.0.1:8000/docs`
+
 ## Features
 
 - Natural-language wine search
@@ -388,6 +407,11 @@ If `pytest` is installed in the environment, run:
 - Unsupported or unavailable requests should return honest responses instead of invented answers.
 - Dynamic filters and grounded matching depend on the processed dataset currently loaded by the backend.
 - Frontend voice features depend on browser support for speech APIs.
+
+## Future Scope
+
+- Use an LLM-based intent routing layer to complement the current rule-based parser for harder or more ambiguous queries.
+- Upgrade text-to-speech to a more natural voice stack so spoken answers feel less robotic and more production-ready.
 
 ## Versions
 
