@@ -1,6 +1,8 @@
 """
 responder.py
-This file builds short, grounded natural-language responses from the retrieval output. It does not search the dataset and it does not rank wines.
+
+This file builds short, grounded natural-language responses from the retrieval
+output. It does not search the dataset and it does not rank wines.
 """
 
 from __future__ import annotations
@@ -103,9 +105,6 @@ def _describe_filters(query: StructuredWineQuery) -> str:
 def _describe_ranking(query: StructuredWineQuery) -> str:
     """
     Explain the ranking basis in plain English.
-
-    This keeps the response honest: users should know why certain bottles are
-    appearing first.
     """
     if query.sort_by == SortBy.BEST_SCORE_DESC:
         return "best score, with lower price breaking ties"
@@ -131,7 +130,6 @@ def _describe_ranking(query: StructuredWineQuery) -> str:
     if query.sort_by == SortBy.RELEVANCE:
         return "relevance based on the active filters"
 
-    # Safe fallback
     return "the default ranking for this query"
 
 
@@ -170,8 +168,6 @@ def _build_zero_results_summary(query: StructuredWineQuery) -> str:
 def _build_short_spoken_summary(query: StructuredWineQuery, retrieval_result: dict[str, Any]) -> str:
     """
     Build a shorter version of the answer for text-to-speech.
-
-    Voice output should be brief. The UI can show the full list separately.
     """
     total_matches = retrieval_result["total_matches"]
     returned_count = retrieval_result["returned_count"]
@@ -193,7 +189,14 @@ def _build_short_spoken_summary(query: StructuredWineQuery, retrieval_result: di
 
     return f"I found {total_matches} matches. Here are the top {returned_count}."
 
+
 def _build_refinement_summary(retrieval_result: dict[str, Any]) -> str:
+    """
+    Build the refinement summary for broad result sets.
+
+    Current behavior still hides results for refinement cases.
+    Soft refinement with page 1 results comes later in V2.
+    """
     total_matches = retrieval_result["total_matches"]
     return (
         f"I found {total_matches} matching wines, which is too broad to show usefully. "
@@ -202,20 +205,50 @@ def _build_refinement_summary(retrieval_result: dict[str, Any]) -> str:
 
 
 def _build_refinement_spoken_summary(retrieval_result: dict[str, Any]) -> str:
+    """
+    Short spoken version of the refinement message.
+    """
     total_matches = retrieval_result["total_matches"]
     return f"I found {total_matches} matches. Please add another filter."
 
 
+def _build_unresolved_entity_summary(query: StructuredWineQuery, retrieval_result: dict[str, Any]) -> str:
+    """
+    Build a grounded response when the user explicitly asked for an entity
+    that does not exist in the dataset.
+
+    Example:
+    - "best red wine in India"
+    """
+    raw_message = retrieval_result.get("message")
+    if raw_message:
+        return raw_message
+
+    if not query.unresolved_entities:
+        return "I could not match one or more requested entities in the current dataset."
+
+    first_entity = query.unresolved_entities[0]
+    return f"I could not match '{first_entity.value}' in the current dataset."
+
+
+def _build_unresolved_entity_spoken_summary(query: StructuredWineQuery, retrieval_result: dict[str, Any]) -> str:
+    """
+    Spoken version of the unresolved-entity message.
+    """
+    raw_message = retrieval_result.get("message")
+    if raw_message:
+        return raw_message
+
+    if not query.unresolved_entities:
+        return "I could not match one or more requested entities."
+
+    first_entity = query.unresolved_entities[0]
+    return f"I could not match {first_entity.value} in the current dataset."
+
+
 def build_response(query: StructuredWineQuery, retrieval_result: dict[str, Any]) -> dict[str, Any]:
     """
-    Build the final Step 6 response payload.
-
-    Inputs:
-    - query: structured query from Step 4
-    - retrieval_result: output from Step 5 retrieve_wines()
-
-    Output:
-    - original retrieval result plus user-facing summary fields
+    Build the final response payload.
 
     This function does not alter the wine list itself. It only adds grounded
     response text around the retrieval result.
@@ -235,18 +268,26 @@ def build_response(query: StructuredWineQuery, retrieval_result: dict[str, Any])
         summary = raw_message or "I need one more detail before I can search the collection."
         spoken_summary = summary
         response_type = "clarification"
-    # Case 3 : Refinment
+
+    # Case 3: Explicit unresolved entity from the parser
+    elif query.unresolved_entities and total_matches == 0:
+        summary = _build_unresolved_entity_summary(query, retrieval_result)
+        spoken_summary = _build_unresolved_entity_spoken_summary(query, retrieval_result)
+        response_type = "no_results"
+
+    # Case 4: Refinement
     elif retrieval_result.get("needs_refinement"):
         summary = _build_refinement_summary(retrieval_result)
         spoken_summary = _build_refinement_spoken_summary(retrieval_result)
         response_type = "too_many_matches"
-    # Case 4: Zero results
+
+    # Case 5: Zero results
     elif total_matches == 0:
         summary = _build_zero_results_summary(query)
         spoken_summary = _build_short_spoken_summary(query, retrieval_result)
         response_type = "no_results"
 
-    # Case 5: Successful retrieval
+    # Case 6: Successful retrieval
     else:
         summary = _build_success_summary(query, retrieval_result)
         spoken_summary = _build_short_spoken_summary(query, retrieval_result)

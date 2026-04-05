@@ -17,12 +17,18 @@ TOO_MANY_MATCHES_SOFT_LIMIT = 100
 
 
 def _clean_scalar(value: Any) -> Any:
+    """
+    Convert pandas missing values into None so JSON output is clean.
+    """
     if pd.isna(value):
         return None
     return value
 
 
 def _normalize_wine_record(record: dict[str, Any]) -> dict[str, Any]:
+    """
+    Normalize dataframe/source-style field names into the frontend API shape.
+    """
     return {
         "id": _clean_scalar(record.get("Id", record.get("id"))),
         "name": _clean_scalar(record.get("Name", record.get("name"))),
@@ -45,6 +51,9 @@ def _normalize_wine_record(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _to_records(df: pd.DataFrame) -> list[dict[str, Any]]:
+    """
+    Convert a DataFrame into JSON-friendly records for the API.
+    """
     cleaned_df = df.where(pd.notnull(df), None)
     raw_records = cleaned_df.to_dict(orient="records")
     return [_normalize_wine_record(record) for record in raw_records]
@@ -54,9 +63,11 @@ def _should_require_refinement(query: StructuredWineQuery, total_matches: int) -
     """
     Ask the user to narrow the query when the result set is too broad.
 
-    Rules:
+    Current behavior:
     - always refine if the match count is extremely large
-    - refine broad browse queries if there are too many matches and too few filters
+    - refine broad browse queries if there are many matches and too few filters
+
+    This remains unchanged in 2.3. Soft refinement comes later in V2.
     """
     active_filter_count = len(query.active_filters())
 
@@ -73,7 +84,46 @@ def _should_require_refinement(query: StructuredWineQuery, total_matches: int) -
     return False
 
 
+def _build_unresolved_entities_message(query: StructuredWineQuery) -> str:
+    """
+    Build a grounded message for explicit user-provided entities that could
+    not be matched to the dataset.
+
+    Example:
+    - "best red wine in India" should not silently become generic red wine results.
+    """
+    unresolved_entities = query.unresolved_entities
+
+    if not unresolved_entities:
+        return "I could not match one or more requested entities in the current dataset."
+
+    # Start simple: use the first unresolved entity for the main message.
+    first_entity = unresolved_entities[0]
+    value = first_entity.value
+    field = first_entity.field
+
+    if field == "country_or_region":
+        return f"I could not find wines from {value} in the current dataset."
+
+    if field == "producer":
+        return f"I could not find a producer named {value} in the current dataset."
+
+    if field == "varietal":
+        return f"I could not find wines with varietal {value} in the current dataset."
+
+    return f"I could not match '{value}' in the current dataset."
+
+
 def retrieve_wines(df: pd.DataFrame, query: StructuredWineQuery) -> dict[str, Any]:
+    """
+    Run the retrieval pipeline.
+
+    Order of short-circuits:
+    1. unsupported request
+    2. clarification needed
+    3. unresolved explicit entities
+    4. normal filtering / ranking
+    """
     if query.intent == QueryIntent.UNSUPPORTED_REQUEST:
         return {
             "query": query.model_dump(),
@@ -90,6 +140,20 @@ def retrieve_wines(df: pd.DataFrame, query: StructuredWineQuery) -> dict[str, An
             "returned_count": 0,
             "wines": [],
             "message": query.clarification_message or "More detail is needed to search the collection.",
+        }
+
+    # Phase 2.3:
+    # If the parser found explicit entities that looked meaningful but could not
+    # be matched to the dataset, do not silently ignore them.
+    # Instead, stop here and return a grounded no-results message.
+    if query.unresolved_entities:
+        return {
+            "query": query.model_dump(),
+            "total_matches": 0,
+            "returned_count": 0,
+            "wines": [],
+            "message": _build_unresolved_entities_message(query),
+            "has_unresolved_entities": True,
         }
 
     filtered_df = retrieve_filtered_wines(df=df, query=query)

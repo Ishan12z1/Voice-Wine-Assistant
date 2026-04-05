@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 from backend.core.data_loader import DEFAULT_DATASET_PATH, load_wine_dataset
-from backend.services.parser import parse_query
+from backend.services.parser.parser import parse_query
 from backend.services.retrieval import retrieve_wines
 from backend.services.responder import build_response
 
