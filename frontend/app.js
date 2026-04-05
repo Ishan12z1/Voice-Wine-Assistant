@@ -422,6 +422,33 @@ function formatPrice(value) {
 }
 
 
+function formatResponseTypeLabel(value) {
+  const normalized = normalizeQuestionText(value);
+  if (!normalized) {
+    return "Not available";
+  }
+
+  const knownLabels = {
+    results: "Results",
+    no_results: "No Results",
+    clarification: "Needs Clarification",
+    browse_collection: "Browse Collection",
+    unsupported_request: "Unsupported Request",
+    ambiguous_request: "Needs Clarification"
+  };
+
+  if (knownLabels[normalized]) {
+    return knownLabels[normalized];
+  }
+
+  return normalized
+    .split("_")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+
 function createWineCard(wine) {
   const card = document.createElement("article");
   card.className = "wine-card";
@@ -688,7 +715,7 @@ function renderPagination(data) {
 function renderResponse(data) {
   summaryText.textContent = safeText(data.summary, "No summary returned.");
 
-  responseTypeEl.textContent = safeText(data.response_type);
+  responseTypeEl.textContent = formatResponseTypeLabel(data.response_type);
   matchCountEl.textContent = `${safeText(data.returned_count, 0)} shown / ${safeText(data.total_matches, 0)} total`;
   rankingBasisEl.textContent = safeText(data.ranking_basis_text, "Not provided");
   metaRow.classList.remove("hidden");
