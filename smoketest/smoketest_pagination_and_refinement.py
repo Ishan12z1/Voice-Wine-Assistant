@@ -60,6 +60,7 @@ def test_soft_refinement_still_shows_results(df: pd.DataFrame) -> None:
     assert response["returned_count"] > 0
     assert response["total_matches"] > 0
     assert response["needs_refinement"] is True
+    assert len(response["followup_suggestions"]) > 0
 
 
 def test_soft_refinement_summary_mentions_page(df: pd.DataFrame) -> None:

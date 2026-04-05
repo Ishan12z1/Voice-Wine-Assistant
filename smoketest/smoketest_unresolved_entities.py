@@ -52,6 +52,7 @@ def test_invalid_location_returns_grounded_no_results(df: pd.DataFrame) -> None:
     assert response["query"]["unresolved_entities"][0]["value"] == "India"
     assert "India" in response["summary"]
     assert "current dataset" in response["summary"]
+    assert len(response["followup_suggestions"]) > 0
 
 
 def test_producer_phrase_is_not_falsely_treated_as_location(df: pd.DataFrame) -> None:
@@ -84,6 +85,38 @@ def test_invalid_location_does_not_return_generic_filtered_results(df: pd.DataFr
     assert response["query"]["filters"]["color"] == "red"
 
 
+def test_missing_dataset_field_returns_grounded_message(df: pd.DataFrame) -> None:
+    """
+    Requests for unsupported dataset capabilities should explain that the
+    dataset does not contain that field.
+    """
+    response = run_query_pipeline("show me dry red wines", df, limit_override=5)
+
+    assert response["response_type"] == "no_results"
+    assert response["show_results"] is False
+    assert response["query"]["unresolved_entities"][0]["field"] == "sweetness"
+    assert response["query"]["unresolved_entities"][0]["reason"] == "field_missing_from_dataset"
+    assert "does not include sweetness information" in response["summary"].lower()
+    assert len(response["followup_suggestions"]) > 0
+
+
+def test_invalid_varietal_becomes_grounded_no_results(df: pd.DataFrame) -> None:
+    """
+    Invalid varietals should not disappear silently.
+    """
+    response = run_query_pipeline(
+        "show me wines by grape Mystery Grape under $30",
+        df,
+        limit_override=5,
+    )
+
+    assert response["response_type"] == "no_results"
+    assert response["show_results"] is False
+    assert response["query"]["unresolved_entities"][0]["field"] == "varietal"
+    assert response["query"]["unresolved_entities"][0]["reason"] == "not_in_dataset"
+    assert len(response["followup_suggestions"]) > 0
+
+
 def main() -> None:
     """
     Run all unresolved-entity smoke tests.
@@ -95,6 +128,8 @@ def main() -> None:
     test_invalid_location_returns_grounded_no_results(df)
     test_producer_phrase_is_not_falsely_treated_as_location(df)
     test_invalid_location_does_not_return_generic_filtered_results(df)
+    test_missing_dataset_field_returns_grounded_message(df)
+    test_invalid_varietal_becomes_grounded_no_results(df)
 
     print("All unresolved-entity smoke tests passed.")
 

@@ -61,6 +61,7 @@ def test_broad_browse_refinement(df: pd.DataFrame) -> None:
     assert response["needs_refinement"] is True
     assert response["page"] == 1
     assert response["page_size"] == 5
+    assert len(response["followup_suggestions"]) > 0
 
 
 def test_gift_budget_clarification(df: pd.DataFrame) -> None:
@@ -73,6 +74,7 @@ def test_gift_budget_clarification(df: pd.DataFrame) -> None:
     assert response["query"]["missing_fields"] == ["budget"]
     assert response["query"]["occasion"] == "housewarming"
     assert response["show_results"] is False
+    assert len(response["followup_suggestions"]) > 0
 
 
 def test_color_clarification(df: pd.DataFrame) -> None:
@@ -85,6 +87,7 @@ def test_color_clarification(df: pd.DataFrame) -> None:
     assert response["query"]["missing_fields"] == ["color"]
     assert response["query"]["filters"]["max_price"] == 30.0
     assert response["show_results"] is False
+    assert len(response["followup_suggestions"]) > 0
 
 
 def test_varietal_clarification(df: pd.DataFrame) -> None:
@@ -98,6 +101,7 @@ def test_varietal_clarification(df: pd.DataFrame) -> None:
     assert response["query"]["filters"]["max_price"] == 30.0
     assert response["query"]["filters"]["require_varietal"] is True
     assert response["show_results"] is False
+    assert len(response["followup_suggestions"]) > 0
 
 
 def test_unsupported_question(df: pd.DataFrame) -> None:
