@@ -9,10 +9,22 @@ from backend.services.responder import build_response
 
 
 def run_pipeline(question: str, df: pd.DataFrame, limit: int = 5) -> dict:
+    """
+    Run the current parser -> retrieval -> responder flow.
+
+    Phase 3 note:
+    We now set both limit and page_size so paging does not silently default
+    to 10 items per page inside retrieval.
+    """
     query = parse_query(question)
 
-    if query.limit != limit:
-        query = query.model_copy(update={"limit": limit})
+    query = query.model_copy(
+        update={
+            "limit": limit,
+            "page": 1,
+            "page_size": limit,
+        }
+    )
 
     retrieval_result = retrieve_wines(df, query)
     response = build_response(query, retrieval_result)
@@ -20,26 +32,42 @@ def run_pipeline(question: str, df: pd.DataFrame, limit: int = 5) -> dict:
 
 
 def test_best_rated_under_budget(df: pd.DataFrame) -> None:
-    response = run_pipeline("Best-rated red wines under $50", df)
+    """
+    Specific ranked query should still return normal results.
+    """
+    response = run_pipeline("Best-rated red wines under $50", df, limit=5)
 
     assert response["response_type"] == "results"
     assert response["show_results"] is True
     assert response["returned_count"] == 5
+    assert response["page"] == 1
+    assert response["page_size"] == 5
     assert response["total_matches"] > 0
     assert len(response["wines"]) == 5
 
 
 def test_broad_browse_refinement(df: pd.DataFrame) -> None:
-    response = run_pipeline("show me wines", df)
+    """
+    Phase 3 behavior:
+    broad browse queries now return page-1 results and refinement guidance,
+    instead of hiding all results.
+    """
+    response = run_pipeline("show me wines", df, limit=5)
 
-    assert response["response_type"] == "too_many_matches"
-    assert response["show_results"] is False
-    assert response["returned_count"] == 0
+    assert response["response_type"] == "results"
+    assert response["show_results"] is True
+    assert response["returned_count"] == 5
     assert response["total_matches"] > 0
+    assert response["needs_refinement"] is True
+    assert response["page"] == 1
+    assert response["page_size"] == 5
 
 
 def test_gift_budget_clarification(df: pd.DataFrame) -> None:
-    response = run_pipeline("Recommend a housewarming gift", df)
+    """
+    Recommendation gift flow should still require a budget first.
+    """
+    response = run_pipeline("Recommend a housewarming gift", df, limit=5)
 
     assert response["response_type"] == "clarification"
     assert response["query"]["missing_fields"] == ["budget"]
@@ -48,7 +76,10 @@ def test_gift_budget_clarification(df: pd.DataFrame) -> None:
 
 
 def test_color_clarification(df: pd.DataFrame) -> None:
-    response = run_pipeline("Recommend a wine under $30", df)
+    """
+    Recommendation with budget but no style should still clarify for color.
+    """
+    response = run_pipeline("Recommend a wine under $30", df, limit=5)
 
     assert response["response_type"] == "clarification"
     assert response["query"]["missing_fields"] == ["color"]
@@ -57,7 +88,10 @@ def test_color_clarification(df: pd.DataFrame) -> None:
 
 
 def test_varietal_clarification(df: pd.DataFrame) -> None:
-    response = run_pipeline("Recommend a wine by grape under $30", df)
+    """
+    Grape-focused recommendation should still clarify for varietal.
+    """
+    response = run_pipeline("Recommend a wine by grape under $30", df, limit=5)
 
     assert response["response_type"] == "clarification"
     assert response["query"]["missing_fields"] == ["varietal"]
@@ -67,7 +101,10 @@ def test_varietal_clarification(df: pd.DataFrame) -> None:
 
 
 def test_unsupported_question(df: pd.DataFrame) -> None:
-    response = run_pipeline("Teach me how tannins work", df)
+    """
+    Unsupported educational questions should still be blocked.
+    """
+    response = run_pipeline("Teach me how tannins work", df, limit=5)
 
     assert response["response_type"] == "unsupported"
     assert response["show_results"] is False
