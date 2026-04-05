@@ -6,7 +6,9 @@ It sends user questions to the backend API and renders the returned
 summary and wine results.
 */
 
-const API_BASE_URL = "http://127.0.0.1:8000";
+const API_BASE_URL = window.location.port === "5500"
+  ? "http://127.0.0.1:8000"
+  : window.location.origin;
 const FILTERS_ENDPOINT = `${API_BASE_URL}/filters`;
 const QUERY_ENDPOINT = `${API_BASE_URL}/query`;
 

@@ -6,8 +6,11 @@ This file exposes the FastAPI application for the wine assistant backend.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from backend.api.models import (
     FilterMetadataResponse,
@@ -22,6 +25,9 @@ from backend.services.pipeline import run_query_pipeline
 
 load_project_env()
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+FRONTEND_DIR = PROJECT_ROOT / "frontend"
+
 app = FastAPI(
     title="Voice Wine Assistant API",
     version="0.1.0",
@@ -35,20 +41,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.get("/", tags=["meta"])
-def root() -> dict[str, str]:
-    """
-    Simple root endpoint so you can quickly confirm the API is running.
-    """
-    return {
-        "message": "Voice Wine Assistant API is running.",
-        "docs": "/docs",
-        "health": "/health",
-        "filters_endpoint": "/filters",
-        "query_endpoint": "/query",
-    }
 
 
 @app.get("/health", response_model=HealthResponse, tags=["meta"])
@@ -116,3 +108,6 @@ def query_wines(payload: WineQueryRequest) -> WineQueryResponse:
             status_code=500,
             detail=f"Unexpected server error: {exc}",
         ) from exc
+
+
+app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
