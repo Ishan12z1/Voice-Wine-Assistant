@@ -29,6 +29,15 @@ Why this file exists:
   }
 
   let availableVoices = [];
+  let currentUtterance = null;
+  let speakRequestId = 0;
+  let hasResponse = false;
+  let isSpeaking = false;
+
+  function updateSpeechControls() {
+    speakButton.disabled = !hasResponse;
+    stopSpeechButton.disabled = !isSpeaking;
+  }
 
   function loadVoices() {
     availableVoices = window.speechSynthesis.getVoices() || [];
@@ -101,7 +110,10 @@ Why this file exists:
   }
 
   function stopSpeaking() {
+    currentUtterance = null;
+    isSpeaking = false;
     window.speechSynthesis.cancel();
+    updateSpeechControls();
   }
 
   function speakText(text) {
@@ -112,34 +124,61 @@ Why this file exists:
       return;
     }
 
+    speakRequestId += 1;
+    const requestId = speakRequestId;
+
     stopSpeaking();
 
-    const utterance = new SpeechSynthesisUtterance(cleaned);
-    const voice = pickVoice();
+    window.setTimeout(() => {
+      if (requestId !== speakRequestId) {
+        return;
+      }
 
-    if (voice) {
-      utterance.voice = voice;
-      console.log("Using TTS voice:", voice.name, voice.lang);
-    }
+      const utterance = new SpeechSynthesisUtterance(cleaned);
+      currentUtterance = utterance;
 
-    // Slightly slower pace usually sounds less robotic.
-    utterance.rate = 0.95;
-    utterance.pitch = 1.0;
-    utterance.volume = 1.0;
+      const voice = pickVoice();
+      if (voice) {
+        utterance.voice = voice;
+        console.log("Using TTS voice:", voice.name, voice.lang);
+      }
 
-    utterance.onstart = () => {
-      ui.setStatus("Speaking answer...", "loading");
-    };
+      utterance.rate = 0.95;
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
 
-    utterance.onend = () => {
-      ui.clearStatus();
-    };
+      utterance.onstart = () => {
+        if (requestId !== speakRequestId) {
+          return;
+        }
+        isSpeaking = true;
+        updateSpeechControls();
+        ui.setStatus("Speaking answer...", "loading");
+      };
 
-    utterance.onerror = () => {
-      ui.setStatus("Voice output failed.", "error");
-    };
+      utterance.onend = () => {
+        if (requestId !== speakRequestId) {
+          return;
+        }
+        currentUtterance = null;
+        isSpeaking = false;
+        updateSpeechControls();
+        ui.clearStatus();
+      };
 
-    window.speechSynthesis.speak(utterance);
+      utterance.onerror = () => {
+        if (requestId !== speakRequestId) {
+          return;
+        }
+        currentUtterance = null;
+        isSpeaking = false;
+        updateSpeechControls();
+        ui.setStatus("Voice output failed.", "error");
+      };
+
+      window.speechSynthesis.resume();
+      window.speechSynthesis.speak(utterance);
+    }, 120);
   }
 
   function speakLatestResponse() {
@@ -170,11 +209,16 @@ Why this file exists:
       return;
     }
 
+    hasResponse = true;
+    updateSpeechControls();
+
     if (autoSpeakCheckbox.checked && shouldAutoSpeak) {
       const textToSpeak = response.spoken_summary || response.summary || "";
       speakText(textToSpeak);
     }
   });
+
+  updateSpeechControls();
 
   window.wineAssistantSpeech = {
     speakLatestResponse,

@@ -387,6 +387,13 @@ body {
   gap: 10px;
 }
 
+.followup-empty {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
 .followup-chip {
   border: 1px solid var(--border);
   background: var(--surface-2);

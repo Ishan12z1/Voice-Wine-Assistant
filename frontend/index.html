@@ -110,7 +110,7 @@ Why this file exists:
 
     <section id="status-section" class="status-section" aria-live="polite"></section>
 
-    <section id="response-section" class="response-section hidden">
+    <section id="response-section" class="response-section">
       <div class="summary-card">
         <div class="summary-header">
           <h2>Answer</h2>
@@ -131,11 +131,16 @@ Why this file exists:
           </div>
         </div>
 
-        <p id="summary-text" class="summary-text"></p>
+        <p id="summary-text" class="summary-text">
+          Ask a question to see a grounded answer, follow-up narrowing options, and voice playback.
+        </p>
 
-        <div id="followup-section" class="followup-section hidden">
+        <div id="followup-section" class="followup-section">
         <p id="followup-title" class="followup-title">Try one of these next:</p>
         <div id="followup-chips" class="followup-chips"></div>
+        <p id="followup-empty" class="followup-empty">
+          Grounded narrowing suggestions will appear here after you run a search.
+        </p>
         </div>
       </div>
 

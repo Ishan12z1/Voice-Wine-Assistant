@@ -23,6 +23,7 @@ const summaryText = document.getElementById("summary-text");
 const followupSection = document.getElementById("followup-section");
 const followupTitle = document.getElementById("followup-title");
 const followupChips = document.getElementById("followup-chips");
+const followupEmpty = document.getElementById("followup-empty");
 
 const metaRow = document.getElementById("meta-row");
 const responseTypeEl = document.getElementById("response-type");
@@ -76,19 +77,19 @@ function normalizeQuestionText(text) {
 
 
 function resetResponseUI() {
-  responseSection.classList.add("hidden");
   resultsSection.classList.add("hidden");
   metaRow.classList.add("hidden");
-  followupSection.classList.add("hidden");
   paginationSection.classList.add("hidden");
 
-  summaryText.textContent = "";
+  summaryText.textContent = "Ask a question to see a grounded answer, follow-up narrowing options, and voice playback.";
   responseTypeEl.textContent = "";
   matchCountEl.textContent = "";
   rankingBasisEl.textContent = "";
   resultsGrid.innerHTML = "";
   followupTitle.textContent = "Try one of these next:";
   followupChips.innerHTML = "";
+  followupEmpty.textContent = "Grounded narrowing suggestions will appear here after you run a search.";
+  followupEmpty.classList.remove("hidden");
   pageIndicator.textContent = "Page 1 of 1";
 }
 
@@ -633,13 +634,16 @@ function renderFollowupSuggestions(data) {
   const config = getFollowupConfig(data);
 
   followupChips.innerHTML = "";
+  followupTitle.textContent = config.title;
 
   if (!config.suggestions.length) {
-    followupSection.classList.add("hidden");
+    followupEmpty.textContent = "No grounded follow-up suggestions are available for this response yet.";
+    followupEmpty.classList.remove("hidden");
+    followupSection.classList.remove("hidden");
     return;
   }
 
-  followupTitle.textContent = config.title;
+  followupEmpty.classList.add("hidden");
 
   config.suggestions.forEach((suggestion) => {
     const button = document.createElement("button");
@@ -682,8 +686,6 @@ function renderPagination(data) {
 
 
 function renderResponse(data) {
-  responseSection.classList.remove("hidden");
-
   summaryText.textContent = safeText(data.summary, "No summary returned.");
 
   responseTypeEl.textContent = safeText(data.response_type);
@@ -717,6 +719,10 @@ async function submitQuestion(question, page = 1, options = {}) {
   setStatus("Searching the collection...", "loading");
   askButton.disabled = true;
   appState.isLoading = true;
+
+  if (window.wineAssistantSpeech?.stopSpeaking) {
+    window.wineAssistantSpeech.stopSpeaking();
+  }
 
   if (shouldCollapseFilters) {
     setFilterVisibility(false);
