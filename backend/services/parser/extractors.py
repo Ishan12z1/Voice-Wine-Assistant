@@ -245,12 +245,16 @@ def extract_abv_filters(question: str) -> tuple[float | None, float | None, floa
     Extract alcohol percentage constraints.
     """
     normalized_question = normalize_text(question)
+    has_abv_context = bool(re.search(r"\b(?:abv|alcohol)\b", normalized_question))
 
     between_match = re.search(
         r"\b(?:between|from)\s+(\d+(?:\.\d+)?)\s*%?\s+(?:and|to)\s+(\d+(?:\.\d+)?)\s*%?\b",
         normalized_question,
     )
-    if between_match:
+    if between_match and (
+        "%" in between_match.group(0)
+        or has_abv_context
+    ):
         return safe_float(between_match.group(1)), safe_float(between_match.group(2)), 0.9
 
     min_match = re.search(

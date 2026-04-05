@@ -90,6 +90,15 @@ def test_clarification_flows_return_backend_driven_suggestions() -> None:
     assert len(response["followup_suggestions"]) > 0
 
 
+def test_price_range_query_does_not_add_spurious_abv_filter() -> None:
+    df = _load_df()
+    response = run_query_pipeline("red wine between 30 and 60 dollar", df, page_override=1, page_size_override=12)
+
+    assert response["response_type"] == "results"
+    assert "ABV between" not in response["summary"]
+    assert "ABV between" not in response["applied_filters_text"]
+
+
 def main() -> None:
     test_metadata_helpers_ground_against_current_dataset()
     test_broad_query_returns_results_with_backend_refinement_suggestions()

@@ -61,3 +61,13 @@ def test_parser_keeps_non_price_numeric_signals_distinct() -> None:
     assert query.filters.min_abv == 14.0
     assert query.filters.min_price is None
     assert query.filters.max_price is None
+
+
+def test_parser_does_not_misread_price_range_as_abv_range() -> None:
+    query = parse_query("red wine between 30 and 60 dollar")
+
+    assert query.filters.color == "red" or str(query.filters.color) == "WineColor.RED"
+    assert query.filters.min_price == 30.0
+    assert query.filters.max_price == 60.0
+    assert query.filters.min_abv is None
+    assert query.filters.max_abv is None
