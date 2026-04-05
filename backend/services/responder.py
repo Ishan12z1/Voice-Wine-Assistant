@@ -55,6 +55,53 @@ def _dedupe_suggestions(suggestions: list[dict[str, str]]) -> list[dict[str, str
     return deduped
 
 
+def _normalize_suggestion_text(value: str | None) -> str:
+    if value is None:
+        return ""
+    return str(value).strip().lower()
+
+
+def _filter_suggestions_for_query(
+    query: StructuredWineQuery,
+    suggestions: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    filtered: list[dict[str, str]] = []
+
+    active_color = _normalize_suggestion_text(query.filters.color.value if query.filters.color else None)
+    active_country = _normalize_suggestion_text(query.filters.country)
+    active_region = _normalize_suggestion_text(query.filters.region)
+    active_appellation = _normalize_suggestion_text(query.filters.appellation)
+    active_producer = _normalize_suggestion_text(query.filters.producer)
+    active_varietal = _normalize_suggestion_text(query.filters.varietal)
+    active_name = _normalize_suggestion_text(query.filters.name)
+
+    for suggestion in suggestions:
+        mode = suggestion.get("mode", "")
+        value = _normalize_suggestion_text(suggestion.get("value"))
+
+        if mode == "color" and value == active_color:
+            continue
+
+        if mode == "varietal" and value == active_varietal:
+            continue
+
+        if mode == "append":
+            if active_country and value == f"from {active_country}":
+                continue
+            if active_region and value == f"from {active_region}":
+                continue
+            if active_appellation and value == f"from {active_appellation}":
+                continue
+            if active_producer and value == f"from {active_producer}":
+                continue
+            if active_name and value == f"called {active_name}":
+                continue
+
+        filtered.append(suggestion)
+
+    return filtered
+
+
 def _build_field_value_suggestions(field_name: str, values: list[str]) -> list[dict[str, str]]:
     suggestions: list[dict[str, str]] = []
 
@@ -389,16 +436,20 @@ def _build_followup_suggestions(
     response_type: str,
 ) -> list[dict[str, str]]:
     if response_type == "clarification":
-        return _build_clarification_suggestions(query)
+        suggestions = _build_clarification_suggestions(query)
+        return _filter_suggestions_for_query(query, _dedupe_suggestions(suggestions))
 
     if query.unresolved_entities and retrieval_result.get("total_matches", 0) == 0:
-        return _build_unresolved_suggestions(query)
+        suggestions = _build_unresolved_suggestions(query)
+        return _filter_suggestions_for_query(query, _dedupe_suggestions(suggestions))
 
     if retrieval_result.get("needs_refinement"):
-        return _build_refinement_suggestions()
+        suggestions = _build_refinement_suggestions()
+        return _filter_suggestions_for_query(query, _dedupe_suggestions(suggestions))
 
     if response_type == "no_results":
-        return _build_no_results_suggestions()
+        suggestions = _build_no_results_suggestions()
+        return _filter_suggestions_for_query(query, _dedupe_suggestions(suggestions))
 
     return []
 

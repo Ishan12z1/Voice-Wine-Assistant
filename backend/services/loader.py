@@ -37,17 +37,42 @@ COLOR_MAP = {
     "sparkling": "sparkling",
     "rose": "rose",
     "rosé": "rose",
+    "rosÃ©": "rose",
     "fortified": "fortified",
     "dessert": "dessert",
     "other": "other",
 }
 
 
+def repair_text_encoding(value: Any) -> Any:
+    """Repair common mojibake patterns such as 'rosÃ©' -> 'rosé'."""
+    if pd.isna(value):
+        return pd.NA
+
+    text = str(value)
+
+    for _ in range(2):
+        if "Ã" not in text and "Â" not in text:
+            break
+
+        try:
+            repaired = text.encode("latin1").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            break
+
+        if repaired == text:
+            break
+
+        text = repaired
+
+    return text
+
+
 def normalize_whitespace(value: Any) -> Any:
     """Trim leading/trailing spaces and collapse repeated whitespace."""
     if pd.isna(value):
         return pd.NA
-    text = str(value).strip()
+    text = str(repair_text_encoding(value)).strip()
     text = re.sub(r"\s+", " ", text)
     return text if text else pd.NA
 

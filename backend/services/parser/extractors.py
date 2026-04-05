@@ -247,21 +247,21 @@ def extract_abv_filters(question: str) -> tuple[float | None, float | None, floa
     normalized_question = normalize_text(question)
 
     between_match = re.search(
-        r"\b(?:between|from)\s+(\d+(?:\.\d+)?)\s*%\s+(?:and|to)\s+(\d+(?:\.\d+)?)\s*%\b",
+        r"\b(?:between|from)\s+(\d+(?:\.\d+)?)\s*%?\s+(?:and|to)\s+(\d+(?:\.\d+)?)\s*%?\b",
         normalized_question,
     )
     if between_match:
         return safe_float(between_match.group(1)), safe_float(between_match.group(2)), 0.9
 
     min_match = re.search(
-        r"\b(?:abv|alcohol)\s+(?:above|over|at least|minimum of)\s*(\d+(?:\.\d+)?)\s*%\b",
+        r"\b(?:abv|alcohol)\s+(?:above|over|at least|minimum of)\s*(\d+(?:\.\d+)?)\s*%?\b",
         normalized_question,
     )
     if min_match:
         return safe_float(min_match.group(1)), None, 0.88
 
     max_match = re.search(
-        r"\b(?:abv|alcohol)\s+(?:below|under|less than)\s*(\d+(?:\.\d+)?)\s*%\b",
+        r"\b(?:abv|alcohol)\s+(?:below|under|less than)\s*(\d+(?:\.\d+)?)\s*%?\b",
         normalized_question,
     )
     if max_match:
