@@ -46,6 +46,13 @@ class Occasion(str, Enum):
     CELEBRATION = "celebration"
 
 
+class UnresolvedReason(str, Enum):
+    NOT_IN_DATASET = "not_in_dataset"
+    FIELD_MISSING_FROM_DATASET = "field_missing_from_dataset"
+    AMBIGUOUS_MATCH = "ambiguous_match"
+    LOW_CONFIDENCE_MATCH = "low_confidence_match"
+
+
 class QueryFilters(BaseModel):
     """
     All dataset-backed filters live here.
@@ -148,6 +155,7 @@ class UnresolvedEntity(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         str_strip_whitespace=True,
+        use_enum_values=True,
     )
 
     # Broad field bucket for the unresolved value.
@@ -158,6 +166,29 @@ class UnresolvedEntity(BaseModel):
 
     # Optional original phrase or context from the question.
     phrase: str | None = None
+
+    # Why the entity could not be grounded to the current dataset.
+    reason: UnresolvedReason = UnresolvedReason.NOT_IN_DATASET
+
+    # Whether the dataset even contains the requested field/capability.
+    dataset_has_field: bool = True
+
+    # Closest or most useful grounded alternatives to suggest back.
+    closest_matches: list[str] = Field(default_factory=list)
+
+
+class FollowupSuggestion(BaseModel):
+    """
+    Small structured suggestion payload returned to the frontend.
+    """
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
+
+    label: str = Field(..., min_length=1)
+    value: str = Field(..., min_length=1)
+    mode: str = Field(default="append", min_length=1)
 
 class StructuredWineQuery(BaseModel):
     """

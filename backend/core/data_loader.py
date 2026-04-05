@@ -25,10 +25,23 @@ NUMERIC_COLUMNS = [
 ]
 
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=4)
+def _load_wine_dataset_cached(resolved_path: str, dataset_mtime: float) -> pd.DataFrame:
+    """
+    Internal cached dataset loader keyed by path + modification time.
+    """
+    df = pd.read_csv(resolved_path)
+
+    for column in NUMERIC_COLUMNS:
+        if column in df.columns:
+            df[column] = pd.to_numeric(df[column], errors="coerce")
+
+    return df
+
+
 def load_wine_dataset(dataset_path: str | None = None) -> pd.DataFrame:
     """
-    Load the enriched dataset once and coerce numeric columns.
+    Load the enriched dataset and refresh the cache if the file changes.
     """
     resolved_path = dataset_path or os.getenv("WINE_DATASET_PATH", DEFAULT_DATASET_PATH)
 
@@ -38,10 +51,5 @@ def load_wine_dataset(dataset_path: str | None = None) -> pd.DataFrame:
             "Set WINE_DATASET_PATH or generate Step 2 outputs first."
         )
 
-    df = pd.read_csv(resolved_path)
-
-    for column in NUMERIC_COLUMNS:
-        if column in df.columns:
-            df[column] = pd.to_numeric(df[column], errors="coerce")
-
-    return df
+    dataset_mtime = os.path.getmtime(resolved_path)
+    return _load_wine_dataset_cached(resolved_path, dataset_mtime)

@@ -4,6 +4,7 @@ import os
 from functools import lru_cache
 
 import pandas as pd
+from rapidfuzz import fuzz, process
 
 from backend.core.data_loader import DEFAULT_DATASET_PATH, load_wine_dataset
 from backend.core.schemas import (
@@ -11,7 +12,7 @@ from backend.core.schemas import (
     DatasetMetadata,
     DatasetNumericRangeMetadata,
 )
-from backend.utils.helpers import normalize_text
+from backend.utils.helpers import best_value_match, normalize_text
 
 
 # App-level canonical field names mapped to possible dataframe column names.
@@ -53,6 +54,16 @@ NUMERIC_FIELDS = [
     "avg_score",
     "rating_count",
 ]
+
+FIELD_MATCH_CONFIG: dict[str, dict[str, float | bool]] = {
+    "country": {"score_cutoff": 96, "allow_fuzzy": True},
+    "region": {"score_cutoff": 94, "allow_fuzzy": True},
+    "appellation": {"score_cutoff": 94, "allow_fuzzy": True},
+    "producer": {"score_cutoff": 93, "allow_fuzzy": True},
+    "varietal": {"score_cutoff": 92, "allow_fuzzy": True},
+    "name": {"score_cutoff": 97, "allow_fuzzy": False},
+    "color": {"score_cutoff": 100, "allow_fuzzy": False},
+}
 
 
 def _resolve_dataset_path(dataset_path: str | None = None) -> str:
@@ -242,6 +253,14 @@ def get_field_values(field_name: str, dataset_path: str | None = None) -> list[s
     return field_meta.values
 
 
+def field_exists(field_name: str, dataset_path: str | None = None) -> bool:
+    """
+    Return True when the current dataset includes this canonical field.
+    """
+    metadata = get_dataset_metadata(dataset_path)
+    return metadata.canonical_columns.get(field_name) is not None
+
+
 def get_top_field_values(
     field_name: str,
     limit: int = 5,
@@ -257,6 +276,17 @@ def get_top_field_values(
         return []
 
     return field_meta.top_values[: max(limit, 0)]
+
+
+def get_numeric_range(
+    field_name: str,
+    dataset_path: str | None = None,
+) -> DatasetNumericRangeMetadata | None:
+    """
+    Return numeric range metadata for one field.
+    """
+    metadata = get_dataset_metadata(dataset_path)
+    return metadata.numeric_ranges.get(field_name)
 
 
 def get_normalized_lookup(
@@ -285,9 +315,93 @@ def get_canonical_column(
     metadata = get_dataset_metadata(dataset_path)
     return metadata.canonical_columns.get(field_name)
 
+
 def get_field_metadata(field_name: str, dataset_path: str | None = None) -> DatasetFieldMetadata | None:
     """
     Return the full metadata object for one field.
     """
     metadata = get_dataset_metadata(dataset_path)
     return metadata.field_indexes.get(field_name)
+
+
+def get_field_match_config(field_name: str) -> dict[str, float | bool]:
+    """
+    Return the match behavior config for one field.
+    """
+    return FIELD_MATCH_CONFIG.get(field_name, {"score_cutoff": 92, "allow_fuzzy": True})
+
+
+def get_closest_field_values(
+    field_name: str,
+    user_text: str,
+    limit: int = 3,
+    dataset_path: str | None = None,
+) -> list[str]:
+    """
+    Return the closest grounded values for a field using normalized metadata.
+    """
+    field_meta = get_field_metadata(field_name, dataset_path)
+    if field_meta is None or not field_meta.values or limit <= 0:
+        return []
+
+    normalized_input = normalize_text(user_text)
+    if not normalized_input:
+        return field_meta.top_values[:limit]
+
+    normalized_keys = list(field_meta.normalized_to_canonical.keys())
+    if not normalized_keys:
+        return field_meta.top_values[:limit]
+
+    matches = process.extract(
+        normalized_input,
+        normalized_keys,
+        scorer=fuzz.WRatio,
+        limit=max(limit * 2, limit),
+    )
+
+    suggestions: list[str] = []
+    for normalized_value, score, _ in matches:
+        if score < 55:
+            continue
+
+        canonical_value = field_meta.normalized_to_canonical.get(normalized_value)
+        if canonical_value and canonical_value not in suggestions:
+            suggestions.append(canonical_value)
+
+        if len(suggestions) >= limit:
+            break
+
+    if suggestions:
+        return suggestions
+
+    return field_meta.top_values[:limit]
+
+
+def resolve_field_value(
+    field_name: str,
+    user_text: str,
+    dataset_path: str | None = None,
+) -> tuple[str | None, float | None, list[str]]:
+    """
+    Resolve a user-provided text against one metadata-backed field.
+
+    Returns:
+    - canonical matched value, if any
+    - match score, if any
+    - fallback suggestions when no match is found
+    """
+    field_meta = get_field_metadata(field_name, dataset_path)
+    if field_meta is None or field_meta.canonical_column is None:
+        return None, None, []
+
+    config = get_field_match_config(field_name)
+    match = best_value_match(
+        user_text,
+        field_meta.values,
+        score_cutoff=float(config["score_cutoff"]),
+        allow_fuzzy=bool(config["allow_fuzzy"]),
+    )
+    if match is not None:
+        return match[0], match[1], []
+
+    return None, None, get_closest_field_values(field_name, user_text, limit=3, dataset_path=dataset_path)
