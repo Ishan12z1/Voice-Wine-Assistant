@@ -4,6 +4,8 @@ Wine Info App is a dataset-grounded wine search assistant built with a FastAPI b
 
 The project is designed to stay honest to the underlying dataset. It does not invent unsupported wine facts, and it surfaces unresolved or unavailable requests explicitly when they do not match the active dataset.
 
+link to video explanation : https://youtu.be/51c8n51nqWk
+
 ## Quick Start
 
 For local development with one command:
